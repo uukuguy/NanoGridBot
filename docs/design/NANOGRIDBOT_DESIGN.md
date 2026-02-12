@@ -140,6 +140,11 @@ class ChannelType(str, Enum):
     WHATSAPP = "whatsapp"
     TELEGRAM = "telegram"
     SLACK = "slack"
+    DISCORD = "discord"
+    QQ = "qq"
+    FEISHU = "feishu"
+    WECOM = "wecom"
+    DINGTALK = "dingtalk"
 
 class MessageRole(str, Enum):
     USER = "user"

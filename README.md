@@ -1,205 +1,218 @@
 # NanoGridBot
 
-> 🤖 轻量级、安全的个人 Claude AI 助手 - NanoClaw 的 Python 移植版
+> 🤖 Lightweight, Secure Personal Claude AI Assistant - Python Port of NanoClaw
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-NanoGridBot 是 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 项目的完整 Python 移植版本，提供通过 WhatsApp 访问的个人 Claude AI 助手，具有容器隔离、多组支持和可扩展架构。
+NanoGridBot is a complete Python port of [NanoClaw](https://github.com/nanoclaw/nanoclaw), providing a personal Claude AI assistant accessible via multiple messaging platforms with container isolation, multi-group support, and extensible architecture.
 
-## ✨ 核心特性
+## ✨ Key Features
 
-- 🔒 **容器隔离**: 使用 Docker 实现 OS 级别的安全隔离
-- 👥 **多组隔离**: 每个 WhatsApp 群组拥有独立的文件系统和会话
-- ⚡ **异步架构**: 基于 asyncio 的高性能设计
-- 🎯 **类型安全**: 使用 Pydantic 进行运行时数据验证
-- 🔌 **可扩展**: 支持插件系统、多通道、Web 监控
-- 📊 **Web 监控**: 实时查看系统状态和管理任务
-- 🔄 **任务调度**: 支持 Cron、间隔和一次性任务
-- 🌐 **多通道**: 支持 WhatsApp、Telegram 等多种通信渠道
+- 🔒 **Container Isolation**: OS-level security isolation using Docker
+- 👥 **Multi-Group Isolation**: Each messaging group has its own filesystem and session
+- ⚡ **Async Architecture**: High-performance design based on asyncio
+- 🎯 **Type Safety**: Runtime data validation using Pydantic
+- 🔌 **Extensible**: Plugin system, multi-channel support, web monitoring
+- 📊 **Web Monitoring**: Real-time system status and task management
+- 🔄 **Task Scheduling**: Cron, interval, and one-time task support
+- 🌐 **Multi-Channel**: WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk
 
-## 📋 目录
+## 📋 Table of Contents
 
-- [快速开始](#快速开始)
-- [架构设计](#架构设计)
-- [功能特性](#功能特性)
-- [开发指南](#开发指南)
-- [部署指南](#部署指南)
-- [文档](#文档)
-- [贡献](#贡献)
-- [许可证](#许可证)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Features](#features)
+- [Development](#development)
+- [Deployment](#deployment)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 前置要求
+### Prerequisites
 
 - Python 3.12+
 - Docker
-- Node.js 20+ (用于 WhatsApp 桥接)
+- Node.js 20+ (for WhatsApp bridge)
 - Git
 
-### 安装
+### Installation
 
 ```bash
-# 克隆仓库
+# Clone repository
 git clone https://github.com/yourusername/nanogridbot.git
 cd nanogridbot
 
-# 创建虚拟环境
+# Create virtual environment
 python3.12 -m venv .venv
 source .venv/bin/activate
 
-# 安装依赖
+# Install dependencies
 pip install -e ".[dev]"
 
-# 构建 Docker 镜像
+# Build Docker image
 docker build -t nanogridbot-agent:latest container/
 
-# 启动服务
+# Start service
 python -m nanogridbot
 ```
 
-### Docker Compose 部署
+### Docker Compose Deployment
 
 ```bash
 docker-compose up -d
 ```
 
-详细安装指南请参考 [快速开始文档](docs/main/QUICK_START.md)。
+See [Quick Start Guide](docs/main/QUICK_START.md) for detailed installation instructions.
 
-## 🏗️ 架构设计
+## 🏗️ Architecture
 
-### 系统架构
+### System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    NanoGridBot 主进程                        │
-│  • 消息轮询 (2s 间隔)                                        │
-│  • WhatsApp 通道 (Baileys 桥接)                              │
-│  • SQLite 状态持久化                                         │
-│  • GroupQueue (并发控制)                                     │
-│  • 任务调度器 (Cron)                                         │
-│  • IPC 处理器 (文件系统)                                     │
+│                    NanoGridBot Main Process                  │
+│  • Message Polling (2s interval)                           │
+│  • Multi-Channel Support (WhatsApp/Telegram/Slack/...)     │
+│  • SQLite State Persistence                                │
+│  • GroupQueue (Concurrency Control)                        │
+│  • Task Scheduler (Cron)                                   │
+│  • IPC Handler (File System)                               │
 └────────────────────┬────────────────────────────────────────┘
-                     │ Docker 容器启动
+                     │ Docker Container Start
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Agent 容器 (Docker)                             │
-│  • Claude Agent SDK 执行                                     │
-│  • 隔离文件系统 (显式挂载)                                   │
-│  • 非 root 用户 (node:1000)                                  │
-│  • Chromium 浏览器自动化                                     │
-│  • IPC 文件监听 (follow-up 消息)                             │
+│              Agent Container (Docker)                        │
+│  • Claude Agent SDK Execution                              │
+│  • Isolated Filesystem (Explicit Mounts)                   │
+│  • Non-root User (node:1000)                               │
+│  • Chromium Browser Automation                             │
+│  • IPC File Watching (follow-up messages)                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 核心模块
+### Core Modules
 
-| 模块 | 职责 | 文件 |
-|------|------|------|
-| **Orchestrator** | 主编排器，管理全局状态和消息循环 | `core/orchestrator.py` |
-| **Container Runner** | 容器生命周期管理和挂载配置 | `core/container_runner.py` |
-| **Group Queue** | 群组队列和并发控制 | `core/group_queue.py` |
-| **Task Scheduler** | 定时任务调度 | `core/task_scheduler.py` |
-| **IPC Handler** | 进程间通信处理 | `core/ipc_handler.py` |
-| **Database** | SQLite 数据持久化 | `database/db.py` |
-| **Channels** | 通道抽象层 | `channels/` |
+| Module | Responsibility | File |
+|--------|----------------|------|
+| **Orchestrator** | Main coordinator, global state and message loop | `core/orchestrator.py` |
+| **Container Runner** | Container lifecycle and mount configuration | `core/container_runner.py` |
+| **Group Queue** | Group queue and concurrency control | `core/group_queue.py` |
+| **Task Scheduler** | Scheduled task dispatch | `core/task_scheduler.py` |
+| **IPC Handler** | Inter-process communication | `core/ipc_handler.py` |
+| **Database** | SQLite data persistence | `database/db.py` |
+| **Channels** | Channel abstraction layer | `channels/` |
 
-详细架构设计请参考 [架构设计文档](docs/design/NANOGRIDBOT_DESIGN.md)。
+See [Architecture Design Document](docs/design/NANOGRIDBOT_DESIGN.md) for details.
 
-## 🎯 功能特性
+## 🎯 Features
 
-### 核心功能
+### Core Features
 
-- ✅ **消息处理**: 自动处理 WhatsApp 消息，支持触发词过滤
-- ✅ **容器隔离**: 每个群组在独立容器中运行，确保安全隔离
-- ✅ **会话管理**: 支持多轮对话和会话恢复
-- ✅ **任务调度**: 支持 Cron、间隔和一次性任务
-- ✅ **IPC 通信**: 容器与主机通过文件系统通信
-- ✅ **挂载安全**: 外部白名单验证，防止路径遍历
+- ✅ **Message Processing**: Auto-process messages with trigger word filtering
+- ✅ **Container Isolation**: Each group runs in isolated containers
+- ✅ **Session Management**: Multi-turn dialogue and session recovery
+- ✅ **Task Scheduling**: Cron, interval, and one-time tasks
+- ✅ **IPC Communication**: Container-host communication via filesystem
+- ✅ **Mount Security**: External whitelist validation, path traversal prevention
 
-### 扩展功能
+### Extended Features
 
-- 🔌 **插件系统**: 支持自定义插件扩展功能
-- 📊 **Web 监控**: 实时查看系统状态和管理任务
-- 🌐 **多通道**: 支持 WhatsApp、Telegram、Slack 等
-- 🔍 **消息搜索**: 全文搜索历史消息
-- 📈 **指标导出**: Prometheus 格式的系统指标
-- 🚦 **速率限制**: 防止滥用和过载
+- 🔌 **Plugin System**: Custom plugins for extended functionality
+- 📊 **Web Monitoring**: Real-time system status and task management
+- 🌐 **Multi-Channel**: WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk
+- 🔍 **Message Search**: Full-text search of message history
+- 📈 **Metrics Export**: Prometheus-formatted system metrics
+- 🚦 **Rate Limiting**: Abuse prevention and overload protection
 
-### 使用示例
+### Supported Channels
+
+| Channel | SDK | Difficulty |
+|---------|-----|------------|
+| WhatsApp | Baileys Bridge | ⭐⭐ |
+| Telegram | python-telegram-bot | ⭐⭐ |
+| Slack | python-slack-sdk | ⭐⭐ |
+| Discord | discord.py | ⭐⭐ |
+| QQ | NoneBot2/OneBot | ⭐⭐⭐ |
+| 飞书 (Feishu) | lark-oapi | ⭐⭐⭐ |
+| 企业微信 (WeCom) | httpx (native) | ⭐⭐ |
+| 钉钉 (DingTalk) | dingtalk-stream-sdk | ⭐⭐ |
+
+### Usage Examples
 
 ```
-# 发送消息
-@Andy 帮我分析这段代码的性能问题
+# Send message
+@Andy help me analyze this code performance issue
 
-# 创建定时任务
+# Create scheduled task
 @Andy schedule task
-提示词: 每天早上 8 点发送天气预报
-调度类型: cron
-Cron 表达式: 0 8 * * *
+Prompt: Send weather forecast every morning at 8am
+Schedule type: cron
+Cron expression: 0 8 * * *
 
-# 查看任务列表
+# List tasks
 @Andy list tasks
 
-# 注册新群组
+# Register new group
 @Andy register group
 ```
 
-## 🛠️ 开发指南
+## 🛠️ Development
 
-### 项目结构
+### Project Structure
 
 ```
 nanogridbot/
-├── src/nanogridbot/       # 源代码
-│   ├── core/              # 核心模块
-│   ├── database/          # 数据库
-│   ├── channels/          # 通道抽象
-│   ├── plugins/           # 插件系统
-│   └── web/               # Web 监控
-├── container/             # Agent 容器
-├── bridge/                # Baileys 桥接
-├── groups/                # 群组工作目录
-├── data/                  # 运行时数据
-├── store/                 # 持久化存储
-├── tests/                 # 测试
-└── docs/                  # 文档
+├── src/nanogridbot/       # Source code
+│   ├── core/              # Core modules
+│   ├── database/           # Database
+│   ├── channels/          # Channel implementations
+│   ├── plugins/           # Plugin system
+│   └── web/               # Web monitoring
+├── container/             # Agent container
+├── bridge/                # Baileys bridge
+├── groups/                # Group working directories
+├── data/                  # Runtime data
+├── store/                 # Persistent storage
+├── tests/                 # Tests
+└── docs/                  # Documentation
 ```
 
-### 运行测试
+### Running Tests
 
 ```bash
-# 运行所有测试
+# Run all tests
 pytest
 
-# 运行测试并生成覆盖率报告
+# Run tests with coverage
 pytest --cov=src --cov-report=html
 
-# 运行特定测试
+# Run specific test
 pytest tests/unit/test_database.py -v
 ```
 
-### 代码质量
+### Code Quality
 
 ```bash
-# 格式化代码
+# Format code
 black src/ tests/
 
-# 排序导入
+# Sort imports
 isort src/ tests/
 
-# 运行 Linter
+# Run Linter
 ruff check src/ tests/
 
-# 类型检查
+# Type check
 mypy src/
 ```
 
-### 插件开发
+### Plugin Development
 
-创建自定义插件：
+Create custom plugins:
 
 ```python
 # plugins/my_plugin/plugin.py
@@ -218,113 +231,114 @@ class MyPlugin(Plugin):
         pass
 
     async def on_message_received(self, message):
-        # 处理消息
+        # Process message
         return message
 ```
 
-详细开发指南请参考 [开发文档](docs/main/QUICK_START.md#开发指南)。
+See [Development Guide](docs/main/QUICK_START.md#development-guide) for details.
 
-## 🚢 部署指南
+## 🚢 Deployment
 
-### Docker 部署
+### Docker Deployment
 
 ```bash
-# 构建镜像
+# Build image
 docker-compose build
 
-# 启动服务
+# Start service
 docker-compose up -d
 
-# 查看日志
+# View logs
 docker-compose logs -f
 
-# 停止服务
+# Stop service
 docker-compose down
 ```
 
-### 生产部署
+### Production Deployment
 
-1. **配置环境变量**
-2. **设置挂载白名单**
-3. **配置反向代理** (Nginx)
-4. **启用 HTTPS**
-5. **配置监控和告警**
+1. Configure environment variables
+2. Set mount whitelist
+3. Configure reverse proxy (Nginx)
+4. Enable HTTPS
+5. Configure monitoring and alerts
 
-详细部署指南请参考 [实施方案](docs/design/IMPLEMENTATION_PLAN.md)。
+See [Implementation Plan](docs/design/IMPLEMENTATION_PLAN.md) for deployment details.
 
-## 📚 文档
+## 📚 Documentation
 
-### 设计文档
+### Design Documents
 
-- [架构设计文档](docs/design/NANOGRIDBOT_DESIGN.md) - 详细的模块设计和代码示例
-- [实施方案](docs/design/IMPLEMENTATION_PLAN.md) - 开发阶段和任务分解
-- [分析总结](docs/main/ANALYSIS_SUMMARY.md) - NanoClaw 项目分析总结
+- [Architecture Design](docs/design/NANOGRIDBOT_DESIGN.md) - Detailed module design and code examples
+- [Implementation Plan](docs/design/IMPLEMENTATION_PLAN.md) - Development phases and task breakdown
+- [Channel Feasibility Assessment](docs/design/CHANNEL_FEASIBILITY_ASSESSMENT.md) - Multi-platform evaluation
+- [Analysis Summary](docs/main/ANALYSIS_SUMMARY.md) - NanoClaw project analysis
 
-### 用户文档
+### User Documents
 
-- [快速开始](docs/main/QUICK_START.md) - 安装和使用指南
-- [配置说明](docs/main/QUICK_START.md#配置说明) - 环境变量和配置文件
-- [故障排除](docs/main/QUICK_START.md#故障排除) - 常见问题解决
+- [Quick Start](docs/main/QUICK_START.md) - Installation and usage guide
+- [Configuration](docs/main/QUICK_START.md#configuration) - Environment variables and config files
+- [Troubleshooting](docs/main/QUICK_START.md#troubleshooting) - Common issues and solutions
 
-### API 文档
+### API Documentation
 
-- Web API 文档: `http://localhost:8000/docs` (启动服务后访问)
+- Web API docs: `http://localhost:8000/docs` (after starting service)
 
-## 🤝 贡献
+## 🤝 Contributing
 
-欢迎贡献！请遵循以下步骤：
+Contributions are welcome! Please follow these steps:
 
-1. Fork 仓库
-2. 创建特性分支: `git checkout -b feature/my-feature`
-3. 提交更改: `git commit -am 'Add my feature'`
-4. 推送分支: `git push origin feature/my-feature`
-5. 创建 Pull Request
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/my-feature`
+3. Commit changes: `git commit -am 'Add my feature'`
+4. Push branch: `git push origin feature/my-feature`
+5. Create Pull Request
 
-### 贡献指南
+### Contribution Guidelines
 
-- 遵循 PEP 8 代码规范
-- 使用 Black 格式化代码
-- 添加类型注解
-- 编写单元测试
-- 更新文档
+- Follow PEP 8 code style
+- Format code with Black
+- Add type annotations
+- Write unit tests
+- Update documentation
 
-## 📊 性能指标
+## 📊 Performance Targets
 
-| 指标 | 目标 | 实际 |
-|------|------|------|
-| 消息处理延迟 | < 2 秒 | TBD |
-| 容器启动时间 | < 5 秒 | TBD |
-| 并发容器数 | 5-10 个 | TBD |
-| 内存占用 | < 500MB | TBD |
-| 测试覆盖率 | > 80% | TBD |
+| Metric | Target | Actual |
+|--------|--------|--------|
+| Message Latency | < 2 sec | TBD |
+| Container Startup | < 5 sec | TBD |
+| Concurrent Containers | 5-10 | TBD |
+| Memory Usage | < 500MB | TBD |
+| Test Coverage | > 80% | TBD |
 
-## 🔒 安全
+## 🔒 Security
 
-### 安全特性
+### Security Features
 
-- 容器隔离（非 root 用户）
-- 挂载白名单验证
-- 路径遍历防护
-- 敏感目录黑名单
-- API 认证授权
-- 速率限制
+- Container isolation (non-root user)
+- Mount whitelist validation
+- Path traversal protection
+- Sensitive directory blacklist
+- API authentication/authorization
+- Rate limiting
 
-### 报告安全问题
+### Reporting Security Issues
 
-如果发现安全漏洞，请发送邮件至 security@example.com，不要公开披露。
+If you discover a security vulnerability, please email security@example.com instead of public disclosure.
 
-## 📝 许可证
+## 📝 License
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file.
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-- [NanoClaw](https://github.com/nanoclaw/nanoclaw) - 原始 TypeScript 实现
+- [NanoClaw](https://github.com/nanoclaw/nanoclaw) - Original TypeScript implementation
 - [Baileys](https://github.com/WhiskeySockets/Baileys) - WhatsApp Web API
-- [FastAPI](https://fastapi.tiangolo.com/) - Web 框架
-- [Pydantic](https://docs.pydantic.dev/) - 数据验证
+- [FastAPI](https://fastapi.tiangolo.com/) - Web framework
+- [Pydantic](https://docs.pydantic.dev/) - Data validation
 
-## 📞 联系方式
+## 📞 Contact
 
 - GitHub: https://github.com/yourusername/nanogridbot
 - Issues: https://github.com/yourusername/nanogridbot/issues
@@ -332,8 +346,8 @@ docker-compose down
 
 ---
 
-**开发状态**: 🚧 开发中
+**Development Status**: 🚧 In Development
 
-**当前版本**: v0.1.0-alpha
+**Current Version**: v0.1.0-alpha
 
-**最后更新**: 2026-02-13
+**Last Updated**: 2026-02-13
