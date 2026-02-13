@@ -1,6 +1,7 @@
 """Channel abstraction for multi-platform messaging support."""
 
 from .base import Channel, ChannelRegistry
+from .discord import DiscordChannel
 from .events import (
     ConnectEvent,
     ErrorEvent,
@@ -11,7 +12,12 @@ from .events import (
     MessageEvent,
 )
 from .factory import ChannelFactory
+from .slack import SlackChannel
+from .telegram import TelegramChannel
+from .wecom import WeComChannel
+from .whatsapp import WhatsAppChannel
 
+# Import all channel implementations to register them
 __all__ = [
     # Base classes
     "Channel",
@@ -26,4 +32,10 @@ __all__ = [
     "MessageEvent",
     "ConnectEvent",
     "ErrorEvent",
+    # Channel implementations
+    "WhatsAppChannel",
+    "TelegramChannel",
+    "SlackChannel",
+    "DiscordChannel",
+    "WeComChannel",
 ]

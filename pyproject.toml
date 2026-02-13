@@ -47,6 +47,18 @@ dependencies = [
 
     # YAML
     "pyyaml>=6.0.0",
+
+    # WhatsApp
+    "pywa>=7.0.0",
+
+    # Telegram
+    "python-telegram-bot>=22.0",
+
+    # Slack
+    "slack-sdk>=3.30.0",
+
+    # Discord
+    "discord.py>=2.4.0",
 ]
 
 [project.optional-dependencies]
