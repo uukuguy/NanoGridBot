@@ -2,15 +2,18 @@
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from nanogridbot.database.connection import Database
+if TYPE_CHECKING:
+    from nanogridbot.database.connection import Database
+
 from nanogridbot.types import Message, MessageRole
 
 
 class MessageRepository:
     """Repository for message storage and retrieval."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: "Database") -> None:
         """Initialize message repository.
 
         Args:

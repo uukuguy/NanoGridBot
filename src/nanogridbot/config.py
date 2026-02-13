@@ -71,6 +71,15 @@ class Config(BaseSettings):
     # Container settings
     container_timeout: int = 300
     container_max_output_size: int = 100000
+    container_max_concurrent_containers: int = 5
+    container_image: str = "nanogridbot-agent:latest"
+
+    # Assistant settings
+    assistant_name: str = "Andy"
+    trigger_pattern: str | None = None
+
+    # Poll interval (ms)
+    poll_interval: int = 2000
 
     # Rate limiting
     max_messages_per_minute: int = 10

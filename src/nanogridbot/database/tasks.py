@@ -2,16 +2,18 @@
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
-from nanogridbot.database.connection import Database
+if TYPE_CHECKING:
+    from nanogridbot.database.connection import Database
+
 from nanogridbot.types import ScheduledTask, ScheduleType, TaskStatus
 
 
 class TaskRepository:
     """Repository for scheduled task storage and retrieval."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: "Database") -> None:
         """Initialize task repository.
 
         Args:

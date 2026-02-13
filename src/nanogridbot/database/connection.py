@@ -5,6 +5,10 @@ from typing import Any
 
 import aiosqlite
 
+from nanogridbot.database.groups import GroupRepository
+from nanogridbot.database.messages import MessageRepository
+from nanogridbot.database.tasks import TaskRepository
+
 
 class Database:
     """Async SQLite database connection manager."""
@@ -150,3 +154,27 @@ class Database:
         """Commit current transaction."""
         db = await self.get_connection()
         await db.commit()
+
+    def get_group_repository(self) -> GroupRepository:
+        """Get group repository instance.
+
+        Returns:
+            GroupRepository instance.
+        """
+        return GroupRepository(self)
+
+    def get_message_repository(self) -> MessageRepository:
+        """Get message repository instance.
+
+        Returns:
+            MessageRepository instance.
+        """
+        return MessageRepository(self)
+
+    def get_task_repository(self) -> TaskRepository:
+        """Get task repository instance.
+
+        Returns:
+            TaskRepository instance.
+        """
+        return TaskRepository(self)

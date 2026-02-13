@@ -1,5 +1,115 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-13 - Phase 6 容器与队列系统实现
+
+### 工作概述
+
+开始 Phase 6 - Container & Queue 的实现，完成了核心模块、工具模块和插件系统的基础框架。
+
+### 完成的工作
+
+#### 1. 核心模块 (`core/`)
+
+**实现文件**:
+
+- `src/nanogridbot/core/orchestrator.py` - 主编排器
+  - 管理全局状态和消息循环
+  - 协调通道、队列、调度器、IPC 处理器
+  - 支持群组注册/注销、消息路由
+
+- `src/nanogridbot/core/container_runner.py` - Docker 容器运行器
+  - 使用 asyncio 执行 docker run 命令
+  - 支持容器挂载卷验证
+  - 支持超时、内存、CPU 限制
+  - 输出解析 (JSON/XML)
+
+- `src/nanogridbot/core/group_queue.py` - 群组队列管理
+  - 管理并发容器数量
+  - 支持消息入队和任务入队
+  - 支持待处理消息和任务
+  - 指数退避重试机制
+
+- `src/nanogridbot/core/task_scheduler.py` - 任务调度器
+  - 支持 CRON、INTERVAL、ONCE 三种调度类型
+  - 使用 croniter 解析 CRON 表达式
+  - 定时检查并执行到期任务
+
+- `src/nanogridbot/core/ipc_handler.py` - IPC 处理器
+  - 监控 IPC 目录的文件变化
+  - 支持输入/输出文件处理
+  - 通过通道发送响应消息
+
+- `src/nanogridbot/core/router.py` - 消息路由器
+  - 消息路由和分发
+  - 触发词匹配
+  - 群组广播
+
+- `src/nanogridbot/core/mount_security.py` - 挂载安全验证
+  - 验证容器挂载路径
+  - 路径遍历检查
+  - 主群组权限控制
+
+#### 2. 工具模块 (`utils/`)
+
+**实现文件**:
+
+- `src/nanogridbot/utils/formatting.py` - 消息格式化
+  - `format_messages_xml()` - 格式化为 XML
+  - `format_output_xml()` - 格式化输出
+  - `parse_input_json()` - 解析 JSON 输入
+  - `serialize_output()` - 序列化输出
+
+- `src/nanogridbot/utils/security.py` - 安全工具
+  - `validate_mounts()` - 验证挂载配置
+  - `validate_container_path()` - 验证容器路径
+  - `sanitize_filename()` - 文件名清理
+
+- `src/nanogridbot/utils/async_helpers.py` - 异步辅助函数
+  - `async_lock()` - 异步锁
+  - `run_with_retry()` - 重试机制
+  - `gather_with_concurrency()` - 并发限制
+  - `AsyncBoundedSemaphore` - 有界信号量
+  - `RateLimiter` - 速率限制器
+
+#### 3. 插件系统 (`plugins/`)
+
+**实现文件**:
+
+- `src/nanogridbot/plugins/base.py` - 插件基类
+  - `Plugin` 抽象基类
+  - 生命周期钩子: `initialize()`, `shutdown()`
+  - 消息钩子: `on_message_received()`, `on_message_sent()`
+  - 容器钩子: `on_container_start()`, `on_container_result()`
+
+- `src/nanogridbot/plugins/loader.py` - 插件加载器
+  - 动态加载插件
+  - 钩子执行机制
+  - 插件生命周期管理
+
+#### 4. 配置更新
+
+**src/nanogridbot/config.py 新增配置**:
+
+- `container_max_concurrent_containers` - 最大并发容器数 (默认 5)
+- `container_image` - 容器镜像名称
+- `assistant_name` - 助手名称 (默认 "Andy")
+- `trigger_pattern` - 触发词正则
+- `poll_interval` - 轮询间隔 (ms)
+
+### 测试结果
+
+- 59 个单元测试全部通过
+- 代码覆盖率: 26% (新增模块需要更多测试)
+
+### 下一步
+
+Phase 6 后续任务:
+1. 添加更多单元测试
+2. 实现容器镜像构建
+3. 实现 Web 监控面板 (Phase 7)
+
+---
+
 ## 2026-02-13 - Phase 4 简单平台通道实现
 
 ### 工作概述

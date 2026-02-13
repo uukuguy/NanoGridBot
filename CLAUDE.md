@@ -8,12 +8,13 @@ NanoGridBot is a Python port of NanoClaw - a personal Claude AI assistant access
 
 ## Development Status
 
-**Current Phase**: Phase 5 Complete - All 8 Messaging Channels Implemented
+**Current Phase**: Phase 6 - Container & Queue (Week 7-9)
 
 - v0.1.0-alpha
 - Python 3.12+
 - asyncio-based async architecture
 - 8 messaging platforms supported
+- Core orchestration, container runner, queue, scheduler implemented
 
 ## Key Files
 
@@ -85,9 +86,11 @@ NanoGridBot is a Python port of NanoClaw - a personal Claude AI assistant access
 5. **Phase 5**: Medium Platforms (Week 6-7) ✅
    - DingTalk, Feishu, QQ
 
-6. **Phase 6**: Container & Queue (Week 7-9)
-   - Docker container management
-   - Message queue system
+6. **Phase 6**: Container & Queue (Week 7-9) 🔄
+   - Docker container management ✅
+   - Message queue system ✅
+   - IPC handler ✅
+   - Task scheduler ✅
 
 7. **Phase 7-12**: Scheduler, Orchestrator, Plugins, Web
 

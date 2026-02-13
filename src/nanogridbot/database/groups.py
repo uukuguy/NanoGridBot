@@ -2,16 +2,18 @@
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from nanogridbot.database.connection import Database
+if TYPE_CHECKING:
+    from nanogridbot.database.connection import Database
+
 from nanogridbot.types import RegisteredGroup
 
 
 class GroupRepository:
     """Repository for group storage and retrieval."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: "Database") -> None:
         """Initialize group repository.
 
         Args:
