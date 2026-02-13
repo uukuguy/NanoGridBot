@@ -52,8 +52,7 @@ class WeComChannel(Channel):
         # Otherwise, get access token using corp credentials
         if not self._corp_id or not self._corp_secret:
             raise RuntimeError(
-                "WeCom channel not configured. "
-                "Provide webhook_url or (corp_id + corp_secret)."
+                "WeCom channel not configured. " "Provide webhook_url or (corp_id + corp_secret)."
             )
 
         await self._get_access_token()

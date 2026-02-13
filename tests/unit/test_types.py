@@ -11,8 +11,8 @@ from nanogridbot.types import (
     Message,
     MessageRole,
     RegisteredGroup,
-    ScheduleType,
     ScheduledTask,
+    ScheduleType,
     TaskStatus,
 )
 

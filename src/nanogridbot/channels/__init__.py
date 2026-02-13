@@ -1,6 +1,7 @@
 """Channel abstraction for multi-platform messaging support."""
 
 from .base import Channel, ChannelRegistry
+from .dingtalk import DingTalkChannel
 from .discord import DiscordChannel
 from .events import (
     ConnectEvent,
@@ -12,6 +13,8 @@ from .events import (
     MessageEvent,
 )
 from .factory import ChannelFactory
+from .feishu import FeishuChannel
+from .qq import QQChannel
 from .slack import SlackChannel
 from .telegram import TelegramChannel
 from .wecom import WeComChannel
@@ -38,4 +41,7 @@ __all__ = [
     "SlackChannel",
     "DiscordChannel",
     "WeComChannel",
+    "DingTalkChannel",
+    "FeishuChannel",
+    "QQChannel",
 ]

@@ -220,7 +220,11 @@ class TestChannelRegistry:
         assert isinstance(channel, DummyChannel)
 
     def test_create_not_registered(self) -> None:
-        channel = ChannelRegistry.create(ChannelType.QQ)
+        # All 8 channel types are now registered, test with a mock type
+        class MockChannelType(str, __import__("enum").Enum):
+            MOCK = "mock"
+
+        channel = ChannelRegistry.create(MockChannelType.MOCK)
         assert channel is None
 
     def test_available_channels(self) -> None:

@@ -1,16 +1,17 @@
 """Unit tests for database modules."""
 
-import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from nanogridbot.database import Database, GroupRepository, MessageRepository, TaskRepository
 from nanogridbot.types import (
     Message,
     MessageRole,
     RegisteredGroup,
-    ScheduleType,
     ScheduledTask,
+    ScheduleType,
     TaskStatus,
 )
 

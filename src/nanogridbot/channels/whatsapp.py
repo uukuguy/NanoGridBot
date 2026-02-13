@@ -43,8 +43,7 @@ class WhatsAppChannel(Channel):
         if self._client is None:
             if self._phone_id is None or self._token is None:
                 raise RuntimeError(
-                    "WhatsApp channel not configured. "
-                    "Provide phone_id and token."
+                    "WhatsApp channel not configured. " "Provide phone_id and token."
                 )
             from fastapi import FastAPI
 

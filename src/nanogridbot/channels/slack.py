@@ -37,10 +37,7 @@ class SlackChannel(Channel):
     async def connect(self) -> None:
         """Establish connection to Slack via Socket Mode."""
         if not self._bot_token or not self._app_token:
-            raise RuntimeError(
-                "Slack channel not configured. "
-                "Provide bot_token and app_token."
-            )
+            raise RuntimeError("Slack channel not configured. " "Provide bot_token and app_token.")
 
         self._web_client = WebClient(token=self._bot_token)
 
