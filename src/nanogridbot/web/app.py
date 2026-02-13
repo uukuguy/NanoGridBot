@@ -360,7 +360,7 @@ async def get_groups():
             "name": group.name,
             "folder": group.folder,
             "active": (
-                queue_states.get(jid, {}).active
+                queue_states.get(jid, {}).get("active", False)
                 if isinstance(queue_states.get(jid), dict)
                 else False
             ),
