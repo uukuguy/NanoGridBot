@@ -14,6 +14,7 @@ from nanogridbot.core.router import MessageRouter
 from nanogridbot.core.task_scheduler import TaskScheduler
 from nanogridbot.database import Database
 from nanogridbot.types import Message, RegisteredGroup
+from nanogridbot.utils.error_handling import GracefulShutdown, with_retry
 
 
 class Orchestrator:
@@ -48,18 +49,36 @@ class Orchestrator:
         self.ipc_handler = IpcHandler(config, db, channels)
         self.router = MessageRouter(config, db, channels)
 
-        # Running flag
+        # Running flag and graceful shutdown
         self._running = False
+        self._shutdown = GracefulShutdown()
+        self._startup_complete = False
+
+        # Health status
+        self._health_status: dict[str, Any] = {
+            "healthy": False,
+            "channels_connected": 0,
+            "channels_total": len(channels),
+            "registered_groups": 0,
+            "active_containers": 0,
+            "pending_tasks": 0,
+            "uptime_seconds": 0,
+        }
 
     async def start(self) -> None:
         """Start the orchestrator."""
+        import time
+
         logger.info("Starting NanoGridBot orchestrator")
+
+        # Setup signal handlers
+        self._setup_signal_handlers()
 
         # Load state
         await self._load_state()
 
-        # Connect all channels
-        await self._connect_channels()
+        # Connect all channels with retry
+        await self._connect_channels_with_retry()
 
         # Start subsystems
         self._running = True
@@ -67,12 +86,35 @@ class Orchestrator:
         await self.ipc_handler.start()
         await self.router.start()
 
+        # Mark startup complete
+        self._startup_complete = True
+        self._health_status["healthy"] = True
+        self._health_status["registered_groups"] = len(self.registered_groups)
+        self._health_status["startup_time"] = time.time()
+
+        logger.info("NanoGridBot orchestrator started successfully")
+
         # Start message polling
         await self._message_loop()
 
+    def _setup_signal_handlers(self) -> None:
+        """Setup graceful shutdown signal handlers."""
+
+        def signal_handler(signum, frame):
+            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+            self._shutdown.request_shutdown()
+
+        # Register signal handlers
+        try:
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+        except (ValueError, OSError):
+            # May fail in some environments (e.g., Windows)
+            logger.warning("Could not register signal handlers")
+
     async def stop(self) -> None:
-        """Stop the orchestrator."""
-        logger.info("Stopping orchestrator")
+        """Stop the orchestrator gracefully."""
+        logger.info("Stopping orchestrator gracefully...")
         self._running = False
 
         # Save state
@@ -86,7 +128,40 @@ class Orchestrator:
         await self.ipc_handler.stop()
         await self.router.stop()
 
-        logger.info("Orchestrator stopped")
+        # Mark as unhealthy
+        self._health_status["healthy"] = False
+
+        # Signal shutdown complete
+        await self._shutdown.shutdown_complete()
+
+        logger.info("Orchestrator stopped gracefully")
+
+    def get_health_status(self) -> dict[str, Any]:
+        """Get current health status of the orchestrator.
+
+        Returns:
+            Dictionary with health metrics
+        """
+        import time
+
+        self._health_status["channels_connected"] = sum(
+            1 for ch in self.channels if getattr(ch, "_connected", False)
+        )
+        self._health_status["registered_groups"] = len(self.registered_groups)
+        self._health_status["active_containers"] = self.queue.active_count
+
+        # Calculate uptime
+        if "startup_time" in self._health_status:
+            self._health_status["uptime_seconds"] = int(
+                time.time() - self._health_status["startup_time"]
+            )
+
+        # Overall health
+        self._health_status["healthy"] = (
+            self._startup_complete and self._health_status["channels_connected"] > 0
+        )
+
+        return self._health_status.copy()
 
     async def _load_state(self) -> None:
         """Load state from database."""
@@ -124,6 +199,30 @@ class Orchestrator:
             except Exception as e:
                 logger.error(f"Failed to connect channel {channel.name}: {e}")
 
+    async def _connect_channels_with_retry(self) -> None:
+        """Connect all channels with retry on failure."""
+        max_retries = 3
+        retry_delay = 5
+
+        for channel in self.channels:
+            for attempt in range(max_retries + 1):
+                try:
+                    await channel.connect()
+                    logger.info(f"Connected channel: {channel.name}")
+                    break
+                except Exception as e:
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"Failed to connect channel {channel.name} "
+                            f"(attempt {attempt + 1}/{max_retries + 1}), "
+                            f"retrying in {retry_delay}s: {e}"
+                        )
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        logger.error(
+                            f"Failed to connect channel {channel.name} after {max_retries} retries: {e}"
+                        )
+
     async def _disconnect_channels(self) -> None:
         """Disconnect all channels."""
         for channel in self.channels:
@@ -137,8 +236,13 @@ class Orchestrator:
         """Main message polling loop."""
         poll_interval = self.config.poll_interval / 1000  # Convert ms to seconds
 
-        while self._running:
+        while self._running and not self._shutdown.is_shutting_down:
             try:
+                # Check for shutdown
+                if self._shutdown.is_shutting_down:
+                    logger.info("Message loop detected shutdown signal, exiting...")
+                    break
+
                 # Get new messages from all channels
                 messages = await self.db.get_new_messages(self.last_timestamp)
 
@@ -148,6 +252,9 @@ class Orchestrator:
 
                     # Process each group
                     for jid, group_messages in grouped.items():
+                        # Check for shutdown before each group
+                        if self._shutdown.is_shutting_down:
+                            break
                         await self._process_group_messages(jid, group_messages)
 
                     # Update timestamp
@@ -156,9 +263,13 @@ class Orchestrator:
                 # Wait for next poll
                 await asyncio.sleep(poll_interval)
 
+            except asyncio.CancelledError:
+                logger.info("Message loop cancelled")
+                break
             except Exception as e:
                 logger.error(f"Error in message loop: {e}")
-                await asyncio.sleep(5)
+                # Use shorter sleep on error to recover faster
+                await asyncio.sleep(min(poll_interval, 1))
 
     def _group_messages(self, messages: list[Message]) -> dict[str, list[Message]]:
         """Group messages by chat JID.

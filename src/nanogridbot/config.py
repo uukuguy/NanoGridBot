@@ -96,6 +96,12 @@ class Config(BaseSettings):
     web_host: str = "0.0.0.0"
     web_port: int = 8080
 
+    # Performance tuning
+    message_cache_size: int = 1000
+    batch_size: int = 100
+    db_connection_pool_size: int = 5
+    ipc_file_buffer_size: int = 8192
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._create_directories()

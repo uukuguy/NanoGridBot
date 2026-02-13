@@ -1,5 +1,6 @@
 """Message database operations."""
 
+from collections import OrderedDict
 from collections.abc import Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -10,16 +11,67 @@ if TYPE_CHECKING:
 from nanogridbot.types import Message, MessageRole
 
 
+class MessageCache:
+    """Simple LRU cache for recent messages."""
+
+    def __init__(self, max_size: int = 1000):
+        """Initialize message cache.
+
+        Args:
+            max_size: Maximum number of messages to cache
+        """
+        self._cache: OrderedDict[str, Message] = OrderedDict()
+        self._max_size = max_size
+
+    def get(self, key: str) -> Message | None:
+        """Get message from cache.
+
+        Args:
+            key: Message ID
+
+        Returns:
+            Cached message or None
+        """
+        if key not in self._cache:
+            return None
+
+        # Move to end (most recently used)
+        self._cache.move_to_end(key)
+        return self._cache[key]
+
+    def put(self, key: str, message: Message) -> None:
+        """Put message in cache.
+
+        Args:
+            key: Message ID
+            message: Message to cache
+        """
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        else:
+            if len(self._cache) >= self._max_size:
+                # Remove oldest (first) item
+                self._cache.popitem(last=False)
+
+        self._cache[key] = message
+
+    def clear(self) -> None:
+        """Clear the cache."""
+        self._cache.clear()
+
+
 class MessageRepository:
     """Repository for message storage and retrieval."""
 
-    def __init__(self, database: "Database") -> None:
+    def __init__(self, database: "Database", cache_size: int = 1000) -> None:
         """Initialize message repository.
 
         Args:
             database: Database connection instance.
+            cache_size: Size of message cache
         """
         self._db = database
+        self._cache = MessageCache(max_size=cache_size)
 
     async def store_message(self, message: Message) -> None:
         """Store a message in the database.
@@ -45,6 +97,9 @@ class MessageRepository:
             ),
         )
         await self._db.commit()
+
+        # Update cache
+        self._cache.put(message.id, message)
 
     async def get_messages_since(
         self,

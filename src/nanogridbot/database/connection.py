@@ -1,13 +1,16 @@
 """Database connection management."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from loguru import logger
 
 from nanogridbot.database.groups import GroupRepository
 from nanogridbot.database.messages import MessageRepository
 from nanogridbot.database.tasks import TaskRepository
+from nanogridbot.utils.error_handling import with_retry
 
 
 class Database:
@@ -21,26 +24,34 @@ class Database:
         """
         self.db_path = db_path
         self._connection: aiosqlite.Connection | None = None
+        self._lock = asyncio.Lock()
 
+    @with_retry(max_retries=3, base_delay=0.5, exceptions=(aiosqlite.Error,))
     async def get_connection(self) -> aiosqlite.Connection:
-        """Get or create database connection.
+        """Get or create database connection with retry.
 
         Returns:
             aiosqlite Connection instance.
         """
-        if self._connection is None:
-            self._connection = await aiosqlite.connect(self.db_path)
-            # Enable foreign keys
-            await self._connection.execute("PRAGMA foreign_keys = ON")
-            # Set row factory for dict-like access
-            self._connection.row_factory = aiosqlite.Row
-        return self._connection
+        async with self._lock:
+            if self._connection is None:
+                self._connection = await aiosqlite.connect(self.db_path)
+                # Enable foreign keys
+                await self._connection.execute("PRAGMA foreign_keys = ON")
+                # Set row factory for dict-like access
+                self._connection.row_factory = aiosqlite.Row
+                # Enable WAL mode for better concurrency
+                await self._connection.execute("PRAGMA journal_mode=WAL")
+                await self._connection.execute("PRAGMA busy_timeout=5000")
+            return self._connection
 
     async def close(self) -> None:
         """Close database connection."""
-        if self._connection is not None:
-            await self._connection.close()
-            self._connection = None
+        async with self._lock:
+            if self._connection is not None:
+                await self._connection.close()
+                self._connection = None
+                logger.info("Database connection closed")
 
     async def initialize(self) -> None:
         """Initialize database schema."""
