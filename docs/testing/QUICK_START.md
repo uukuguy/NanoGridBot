@@ -10,10 +10,27 @@
 
 ### 1. 安装依赖
 
+**推荐方式：使用 uv（更快）**
+
 ```bash
+# 安装uv（如果还没有）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # 克隆项目（如果还没有）
 cd /path/to/NanoGridBot
 
+# 使用uv同步依赖（自动创建虚拟环境）
+uv sync
+
+# 激活虚拟环境
+source .venv/bin/activate  # Linux/macOS
+# 或
+.venv\Scripts\activate     # Windows
+```
+
+**传统方式：使用 pip**
+
+```bash
 # 创建虚拟环境
 python -m venv .venv
 
@@ -56,11 +73,29 @@ TELEGRAM_CHAT_ID=your_chat_id_here
 
 ### 3. 启动NanoGridBot
 
+**使用 uv（推荐）**
+
 ```bash
+# 方式1: 使用uv运行（无需激活虚拟环境）
+uv run nanogridbot
+
+# 方式2: 指定端口
+uv run nanogridbot --port 8080
+
+# 方式3: 调试模式
+uv run nanogridbot --debug
+```
+
+**传统方式**
+
+```bash
+# 确保已激活虚拟环境
+source .venv/bin/activate
+
 # 方式1: 使用Python模块
 python -m nanogridbot
 
-# 方式2: 使用CLI（如果已安装）
+# 方式2: 使用CLI
 nanogridbot
 
 # 方式3: 指定端口

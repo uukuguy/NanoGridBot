@@ -75,3 +75,11 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# uv
+uv.lock

@@ -41,22 +41,44 @@ NanoGridBot is a complete Python port of [NanoClaw](https://github.com/nanoclaw/
 
 ### Installation
 
+**推荐方式：使用 uv（更快）**
+
 ```bash
-# Clone repository
+# 安装uv（如果还没有）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 克隆仓库
 git clone https://github.com/yourusername/nanogridbot.git
 cd nanogridbot
 
-# Create virtual environment
+# 使用uv同步依赖（自动创建虚拟环境）
+uv sync
+
+# 构建Docker镜像
+docker build -t nanogridbot-agent:latest container/
+
+# 启动服务
+uv run nanogridbot
+```
+
+**传统方式：使用 pip**
+
+```bash
+# 克隆仓库
+git clone https://github.com/yourusername/nanogridbot.git
+cd nanogridbot
+
+# 创建虚拟环境
 python3.12 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
+# 安装依赖
 pip install -e ".[dev]"
 
-# Build Docker image
+# 构建Docker镜像
 docker build -t nanogridbot-agent:latest container/
 
-# Start service
+# 启动服务
 python -m nanogridbot
 ```
 
@@ -183,30 +205,63 @@ nanogridbot/
 
 ### Running Tests
 
+**使用 uv（推荐）**
+
 ```bash
-# Run all tests
+# 运行所有测试
+uv run pytest
+
+# 运行测试并生成覆盖率报告
+uv run pytest --cov=src --cov-report=html
+
+# 运行特定测试
+uv run pytest tests/unit/test_database.py -v
+```
+
+**传统方式**
+
+```bash
+# 运行所有测试
 pytest
 
-# Run tests with coverage
+# 运行测试并生成覆盖率报告
 pytest --cov=src --cov-report=html
 
-# Run specific test
+# 运行特定测试
 pytest tests/unit/test_database.py -v
 ```
 
 ### Code Quality
 
+**使用 uv（推荐）**
+
 ```bash
-# Format code
+# 格式化代码
+uv run black src/ tests/
+
+# 排序导入
+uv run isort src/ tests/
+
+# 运行代码检查
+uv run ruff check src/ tests/
+
+# 类型检查
+uv run mypy src/
+```
+
+**传统方式**
+
+```bash
+# 格式化代码
 black src/ tests/
 
-# Sort imports
+# 排序导入
 isort src/ tests/
 
-# Run Linter
+# 运行代码检查
 ruff check src/ tests/
 
-# Type check
+# 类型检查
 mypy src/
 ```
 
@@ -346,7 +401,7 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
-**Development Status**: 🚧 In Development
+**Development Status**: ✅ Phase 1-10 Complete
 
 **Current Version**: v0.1.0-alpha
 
