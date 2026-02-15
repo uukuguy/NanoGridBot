@@ -1,5 +1,47 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-16 - Phase 13 核心模块测试覆盖率提升
+
+### 工作概述
+
+针对5个核心模块补充单元测试，将覆盖率从26-58%提升到82-100%。总测试数从207增加到353，整体覆盖率从51%提升到62%。
+
+### 完成的工作
+
+#### 1. 新增测试文件
+
+| 文件 | 测试数 | 覆盖模块 |
+|------|--------|----------|
+| `tests/unit/test_router.py` | 25 | 消息路由、触发器、广播 |
+| `tests/unit/test_orchestrator_extended.py` | 20 | 启停、信号、消息循环、重试 |
+| `tests/unit/test_container_runner.py` | 25 | Docker命令、输出解析、状态 |
+| `tests/unit/test_error_handling.py` | 30 | retry、CircuitBreaker、Shutdown |
+| `tests/unit/test_plugin_loader.py` | 46 | 加载、配置、hook、热加载 |
+
+#### 2. 覆盖率变化
+
+| 模块 | 之前 | 之后 |
+|------|------|------|
+| `core/router.py` | 31% | 100% |
+| `core/orchestrator.py` | 58% | 98% |
+| `core/container_runner.py` | 42% | 86% |
+| `utils/error_handling.py` | 35% | 95% |
+| `plugins/loader.py` | 26% | 82% |
+| 整体 | 51% | 62% |
+
+#### 3. 技术决策
+
+- Channel适配器(17-23%)不追求高覆盖率，SDK封装的价值在集成测试
+- loader.py剩余未覆盖代码为watchdog热加载内部逻辑，属于集成测试范畴
+
+### 测试结果
+
+- 353 个测试全部通过
+- 0 个失败
+- 整体覆盖率 62%
+
+---
+
 ## 2026-02-13 - Phase 7 Web 监控面板实现
 
 ### 工作概述

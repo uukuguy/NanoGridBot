@@ -24,7 +24,7 @@ NanoGridBot 项目已全部完成，具备以下功能：
 | 性能优化 | ✅ |
 | 结构化日志 | ✅ |
 
-**测试**: 124 个测试通过 (40% 覆盖率)
+**测试**: 353 个测试通过 (62% 覆盖率)
 
 ---
 
@@ -505,7 +505,7 @@ NanoGridBot is now production-ready with:
 - ✅ Comprehensive error handling and recovery
 - ✅ Performance optimization with caching
 - ✅ Structured logging
-- ✅ 124 passing tests
+- ✅ 353 passing tests (62% coverage)
 
 ### Reference Documents
 
@@ -765,9 +765,78 @@ docs/testing/
 
 **测试相关改进**:
 1. ✅ 测试文档完整 → 已创建完整测试文档体系
-2. ❌ 测试覆盖不足 (40%) → 需要实施测试计划，目标80%+
+2. ✅ 核心模块测试覆盖率提升 → 5个核心模块达到82-100%
 3. ❌ 自动化测试未配置 → 需要配置 Jest 和 CI/CD
 4. ❌ 测试数据未准备 → 需要创建实际的测试数据文件
+
+---
+
+## Phase 13: Core Module Test Coverage (Week 15) ✅
+
+### Current Status
+
+**Date**: 2026-02-16
+**Activity**: 核心模块单元测试覆盖率提升
+
+### Completed Work
+
+#### 1. 新增测试文件 ✅
+
+- [x] `tests/unit/test_router.py` - 消息路由器测试 (25 tests)
+  - 路由生命周期 (start/stop)
+  - 触发器模式匹配 (默认/自定义/大小写)
+  - 消息路由 (注册/未注册群组)
+  - 响应发送 (匹配/不匹配通道)
+  - 广播功能 (全部/指定/空群组)
+
+- [x] `tests/unit/test_orchestrator_extended.py` - 编排器扩展测试 (20 tests)
+  - 启动/停止序列
+  - 信号处理器注册
+  - 通道重试连接
+  - 健康状态 (uptime/容器数)
+  - 消息循环 (处理/错误/取消/关闭)
+  - 消息处理 (session/timestamp传递)
+
+- [x] `tests/unit/test_container_runner.py` - 容器运行器测试 (25 tests)
+  - 输出解析 (JSON/纯文本/空/无标记)
+  - Docker命令构建 (挂载/环境变量/资源限制)
+  - Docker可用性检查
+  - 容器状态查询
+  - 容器清理
+  - 容器执行 (成功/超时/未安装)
+
+- [x] `tests/unit/test_error_handling.py` - 错误处理测试 (30 tests)
+  - with_retry装饰器 (成功/重试/耗尽/指数退避/延迟上限)
+  - CircuitBreaker (状态转换/失败计数/半开恢复)
+  - GracefulShutdown (任务跟踪/取消/事件)
+  - retry_async函数
+  - run_with_timeout
+
+- [x] `tests/unit/test_plugin_loader.py` - 插件加载器测试 (46 tests)
+  - PluginConfig (加载/保存/缓存/错误处理)
+  - PluginLoader (初始化/加载/查找/列表)
+  - 插件生命周期 (shutdown/错误处理)
+  - Hook执行 (调用/跳过/错误)
+  - 热加载 (启用/禁用/重载)
+
+#### 2. 覆盖率提升 ✅
+
+| 模块 | 之前 | 之后 |
+|------|------|------|
+| `core/router.py` | 31% | **100%** |
+| `core/orchestrator.py` | 58% | **98%** |
+| `core/container_runner.py` | 42% | **86%** |
+| `utils/error_handling.py` | 35% | **95%** |
+| `plugins/loader.py` | 26% | **82%** |
+| **整体** | **51%** | **62%** |
+
+#### 3. 测试策略决策 ✅
+
+- Channel适配器 (17-23%) 不追求高覆盖率，SDK调用封装的价值在集成测试
+- loader.py 剩余未覆盖代码为 watchdog 热加载内部逻辑，属于集成测试范畴
+- 总测试数: 207 → 353 (新增 146 个测试)
+
+**Test Results**: 353 tests passed, 62% coverage
 
 ---
 
