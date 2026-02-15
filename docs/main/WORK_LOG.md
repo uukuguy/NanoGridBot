@@ -1,5 +1,51 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-16 - Phase 14 测试覆盖率达标 & 技术债务评估
+
+### 工作概述
+
+将测试覆盖率从62%提升到80%，达到项目目标。新增79个测试（561→640），覆盖数据库仓库、任务调度器、WebSocket、插件加载器、容器运行器等模块。同时完成技术债务评估。
+
+### 完成的工作
+
+#### 1. 提交未跟踪测试文件 (10个)
+- 覆盖率 62% → 73%
+
+#### 2. 新增测试文件 (5个)
+
+| 文件 | 测试数 | 覆盖模块 |
+|------|--------|----------|
+| `tests/unit/test_database_repos.py` | 16 | TaskRepo、GroupRepo、MessageCache |
+| `tests/unit/test_task_scheduler_extended.py` | 13 | 调度循环、任务执行、暂停/恢复 |
+| `tests/unit/test_web_websocket.py` | 11 | WebSocket端点、Lifespan |
+| `tests/unit/test_coverage_boost.py` | 12 | Plugin基类、Channel事件、容器运行 |
+| `tests/unit/test_coverage_boost2.py` | 27 | GroupQueue、IPC、CLI、安全工具 |
+
+#### 3. 覆盖率提升详情
+
+| 模块 | 之前 | 之后 |
+|------|------|------|
+| `database/tasks.py` | 76% | **100%** |
+| `database/messages.py` | 78% | **100%** |
+| `core/task_scheduler.py` | 83% | **100%** |
+| `core/group_queue.py` | 81% | **100%** |
+| `core/ipc_handler.py` | 90% | **100%** |
+| `web/app.py` | 84% | **99%** |
+| `plugins/loader.py` | 82% | **99%** |
+| `cli.py` | 90% | **99%** |
+| **整体** | **62%** | **80%** |
+
+#### 4. 技术债务评估
+
+**待讨论项（需架构决策）：**
+- LLM抽象层缺失 → 建议集成LiteLLM支持多模型
+- API文档不完整 → FastAPI已自带OpenAPI，需补充描述
+- Channel适配器覆盖率低(17-23%) → SDK封装，集成测试更有价值
+
+**测试结果**: 640 tests passed, 80% coverage
+
+---
+
 ## 2026-02-16 - Phase 13 核心模块测试覆盖率提升
 
 ### 工作概述
