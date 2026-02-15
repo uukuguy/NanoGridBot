@@ -840,6 +840,54 @@ docs/testing/
 
 ---
 
+## Phase 15: CLI 全模式实现 ✅
+
+### Current Status
+
+**Date**: 2026-02-16
+**Activity**: CLI 重构为四子命令架构
+
+### Completed Work
+
+#### 1. CLI 重构 ✅
+
+- [x] `src/nanogridbot/cli.py` - 完全重写为子命令架构
+  - `serve` - 启动 orchestrator + web dashboard (默认模式)
+  - `shell` - 交互式 REPL，支持 /clear、/history、/quit 元命令
+  - `chat` - 单次消息，支持 -m 参数或 stdin 管道输入
+  - `run` - 对已注册 group 执行 prompt，支持 --context 和 --send
+
+- [x] `src/nanogridbot/__main__.py` - 简化为委托给 cli.main()
+
+#### 2. 技术要点 ✅
+
+- argparse subparsers 实现子命令
+- 共享 LLM 参数: --model/--max-tokens/--temperature/--system/--stream
+- shell 模式维护 LLMMessage 列表对话历史
+- chat 模式支持 stdin 管道 (echo "xxx" | nanogridbot chat)
+- run 模式通过 GroupRepository.get_groups_by_folder() 查找 group
+- LLMManager.from_config() 自动注册可用 provider
+
+### Next Steps
+
+#### 1. CLI 测试补充
+- 更新 tests/integration/test_cli.py 覆盖新的子命令
+- 测试 shell 模式的元命令 (/clear, /history, /quit)
+- 测试 chat 模式的 stdin 管道输入
+- 测试 run 模式的 group 查找和上下文加载
+
+#### 2. 功能增强 (可选)
+- shell 模式添加 readline 支持 (历史记录、自动补全)
+- chat 模式添加 --json 输出格式
+- run 模式添加 --format 输出格式选项
+- 添加 `nanogridbot config` 子命令查看/修改配置
+
+#### 3. 集成测试
+- tests/integration/test_channels.py (已存在未跟踪文件)
+- LLM provider 端到端测试
+
+---
+
 **Created**: 2026-02-13
 **Updated**: 2026-02-16
-**Project Status**: Phase 14 Complete - 测试覆盖率达标80%, 640 tests passing
+**Project Status**: Phase 15 Complete - CLI 全模式实现 (serve/shell/chat/run)
