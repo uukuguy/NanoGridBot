@@ -12,7 +12,7 @@
 
 - 🔥 **Claude Agent SDK Powered** - Most capable agent runtime with Claude Code
 - 🛠️ **Skills & MCP Integration** - Verify Skills, MCP servers, and CLI tools in isolated containers
-- 🔌 **Multi-LLM Support** - Claude, OpenAI, Anthropic API, custom providers
+- 🔌 **Model Switching** - Via container env vars (ANTHROPIC_MODEL, ANTHROPIC_API_KEY, etc.)
 - 📡 **8 IM Channels** - Test in production-like environments (WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk)
 - ⚡ **Interactive Shell** - Real-time debugging with session resume capability
 - 🛠️ **5 CLI Modes**: serve, shell, run, logs, session
@@ -192,7 +192,7 @@ NanoGridBot borrowed the core container isolation concept from NanoClaw and enha
 
 ### Containerized Agent Runtime
 
-- ✅ **Multi-LLM Support**: Claude, OpenAI, Anthropic API, custom LLM providers
+- ✅ **Model Switching**: Via container env vars (ANTHROPIC_MODEL, ANTHROPIC_API_KEY, etc.)
 - ✅ **Container Isolation**: Agents run in isolated Docker containers for security
 - ✅ **Session Management**: Multi-turn dialogue support with session persistence
 - ✅ **Context Management**: Independent context for different projects/groups

@@ -4,13 +4,13 @@
 
 **NanoGridBot** 是基于 Claude Agent SDK 驱动的智能体开发控制台，提供最强大的智能体运行时，具备深度 Skills、MCP 和 CLI 集成验证能力。
 
-源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，已演化为完整的智能体开发平台——不仅支持 Claude Code，还支持多种 LLM（OpenAI、Anthropic API、自定义）。
+源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，已演化为完整的智能体开发平台——通过容器内 Claude Code 运行智能体，模型切换通过环境变量 ANTHROPIC_MODEL 实现。
 
 ### 1.1 核心特性
 
 - **Claude Agent SDK 驱动**: 基于 Claude Code，最强大的智能体运行时
 - **Skills & MCP 集成验证**: 在隔离容器中验证 Skills、MCP 服务器和 CLI 工具
-- **多 LLM 支持**: Claude、OpenAI、Anthropic API、自定义 LLM
+- **模型切换**: 通过容器环境变量 ANTHROPIC_MODEL、ANTHROPIC_API_KEY 等切换模型
 - **交互式调试**: Shell 模式实时调试，支持会话恢复
 - **容器隔离**: Docker 实现 OS 级别的安全隔离
 - **多组隔离**: 每个群组拥有独立的文件系统、会话和容器沙箱

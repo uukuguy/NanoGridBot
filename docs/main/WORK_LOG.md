@@ -147,7 +147,7 @@ nanogridbot session kill <id>     # 终止会话
 #### 4. 技术债务评估
 
 **待讨论项（需架构决策）：**
-- LLM抽象层缺失 → 建议集成LiteLLM支持多模型
+- ~~LLM抽象层缺失 → 建议集成LiteLLM支持多模型~~ (已删除 - 通过容器环境变量ANTHROPIC_MODEL切换模型)
 - API文档不完整 → FastAPI已自带OpenAPI，需补充描述
 - Channel适配器覆盖率低(17-23%) → SDK封装，集成测试更有价值
 

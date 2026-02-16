@@ -6,7 +6,7 @@ This file contains project-specific instructions for Claude Code.
 
 NanoGridBot is an **Agent Dev Console & Lightweight Runtime** - a comprehensive platform for building, testing, and deploying AI agents across multiple platforms.
 
-Not just Claude Code - supports multiple LLM providers (Claude, OpenAI, Anthropic, custom) plus Skills, Plugins, and MCP integration.
+Uses Claude Code inside Docker containers for agent execution - model switching via container environment variables (ANTHROPIC_MODEL, ANTHROPIC_API_KEY, etc.). Also supports Skills, Plugins, and MCP integration.
 
 ## Development Status
 
@@ -59,13 +59,15 @@ Not just Claude Code - supports multiple LLM providers (Claude, OpenAI, Anthropi
 - Use pytest and pytest-asyncio
 - Target coverage > 80%
 
-## Supported LLM Providers
+## Agent Runtime
 
-| Provider | SDK | Status |
-|----------|-----|--------|
-| Claude (Anthropic) | anthropic-sdk | ✅ Implemented |
-| OpenAI | openai | ✅ Implemented |
-| Custom LLM | httpx | ✅ Supported |
+| Component | Description | Status |
+|-----------|-------------|--------|
+| Claude Code | Runs inside Docker container | ✅ Implemented |
+| Model Selection | Via container env vars (ANTHROPIC_MODEL, ANTHROPIC_API_KEY, etc.) | ✅ Supported |
+| Skills | Loaded by Claude Code | ✅ Supported |
+| Plugins | NanoGridBot plugin system | ✅ Supported |
+| MCP | Via container MCP configuration | ✅ Supported |
 
 ## Supported Messaging Channels
 
