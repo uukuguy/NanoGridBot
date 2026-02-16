@@ -16,7 +16,7 @@ Not just Claude Code - supports multiple LLM providers (Claude, OpenAI, Anthropi
 - Python 3.12+
 - asyncio-based async architecture
 - 8 messaging platforms supported
-- 6 CLI modes: serve, shell, chat, run, logs, session
+- 5 CLI modes: serve, shell, run, logs, session
 - Core orchestration, container runner, queue, scheduler, web dashboard implemented
 - Container-based CLI with ContainerSession support
 - Config hot-reload with ConfigWatcher
@@ -146,7 +146,7 @@ Not just Claude Code - supports multiple LLM providers (Claude, OpenAI, Anthropi
     - 640 tests passing
 
 15. **Phase 15**: CLI Full Mode Implementation ✅
-    - CLI refactored to container-based shell/chat/run modes
+    - CLI refactored to container-based shell/run modes
     - ContainerSession for interactive shell mode
     - Added Pydantic response models for web API
 

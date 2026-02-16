@@ -1624,16 +1624,17 @@ if __name__ == "__main__":
 
 ## 6.1 CLI 命令行接口 (`cli.py`)
 
-NanoGridBot 提供四种 CLI 模式，支持不同的使用场景：
+NanoGridBot 提供五种 CLI 模式，支持不同的使用场景：
 
 ### 6.1.1 CLI 模式
 
 | 模式 | 命令 | 说明 |
 |------|------|------|
 | **serve** | `nanogridbot serve` | 启动完整服务（orchestrator + web dashboard）|
-| **shell** | `nanogridbot shell` | 交互式容器 REPL |
-| **chat** | `nanogridbot chat "prompt"` | 单次消息交互 |
-| **run** | `nanogridbot run <group>` | 对已注册群组执行 prompt |
+| **shell** | `nanogridbot shell` | 交互式容器会话（多轮对话） |
+| **run** | `nanogridbot run -p <prompt>` | 单次非交互式执行 |
+| **logs** | `nanogridbot logs` | 查看和跟踪日志 |
+| **session** | `nanogridbot session ls/kill/resume` | 会话管理 |
 
 ### 6.1.2 核心组件
 
@@ -1644,9 +1645,10 @@ from nanogridbot.core.container_session import ContainerSession
 from nanogridbot.core.container_runner import run_container_agent
 
 async def cmd_serve(args):     # 启动完整服务
-async def cmd_shell(args):      # 交互式 REPL
-async def cmd_chat(args):      # 单次消息
-async def cmd_run(args):        # 群组执行
+async def cmd_shell(args):      # 交互式容器会话
+async def cmd_run(args):        # 单次执行
+async def cmd_logs(args):       # 日志查看
+async def cmd_session(args):    # 会话管理
 ```
 
 ### 6.1.3 ContainerSession

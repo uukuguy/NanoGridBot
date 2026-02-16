@@ -1,6 +1,6 @@
-# NanoGridBot
+# {🦑} NanoGridBot
 
-> 🤖 智能体开发控制台 & 轻量级运行时
+> 智能体开发控制台 & 轻量级运行时
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -74,24 +74,32 @@ docker build -t nanogridbot-agent:latest container/
 uv run nanogridbot serve
 ```
 
-### 四种运行模式
+### 五种运行模式
 
 ```bash
 # 1. Serve 模式：启动完整服务（Web 监控面板）
 nanogridbot serve
 nanogridbot serve --host 0.0.0.0 --port 8080
 
-# 2. Shell 模式：交互式调试 REPL
+# 2. Shell 模式：交互式容器会话（多轮对话）
 nanogridbot shell
-nanogridbot shell --model claude-sonnet-4-20250514
+nanogridbot shell -g myproject                 # 指定项目组
+nanogridbot shell --resume session-id           # 恢复之前的会话
 
-# 3. Chat 模式：单次 Prompt 测试
-nanogridbot chat "请解释什么是递归"
-echo "你的问题" | nanogridbot chat
+# 3. Run 模式：单次非交互式执行
+nanogridbot run -p "请解释什么是递归"
+echo "你的问题" | nanogridbot run -p -         # 管道输入
+nanogridbot run -g myproject -p "分析代码"     # 指定项目组
+nanogridbot run -g myproject -p "任务" --timeout 60 --env KEY=VALUE
 
-# 4. Run 模式：对已注册群组执行任务
-nanogridbot run myproject --context "分析这段代码的性能"
-nanogridbot run myproject --send --context "发送报告"
+# 4. Logs 模式：查看和跟踪日志
+nanogridbot logs -n 100           # 显示最后100行
+nanogridbot logs -f               # 跟踪日志输出
+
+# 5. Session 模式：管理交互式会话
+nanogridbot session ls            # 列出所有会话
+nanogridbot session kill <id>     # 终止会话
+nanogridbot session resume <id>   # 显示恢复信息
 ```
 
 ---
@@ -215,25 +223,33 @@ nanogridbot --help
 # 版本信息
 nanogridbot --version
 
-# Serve 模式：完整服务
+# Serve 模式：完整服务（Web 监控面板）
 nanogridbot serve                    # 默认启动
 nanogridbot serve --host 0.0.0.0    # 自定义地址
 nanogridbot serve --port 9000        # 自定义端口
 nanogridbot serve --debug            # 调试模式
 
-# Shell 模式：交互式 REPL
-nanogridbot shell                                    # 默认
-nanogridbot shell --model claude-sonnet-4-20250514  # 指定模型
-nanogridbot shell --system "你是一个Python专家"      # 系统提示词
+# Shell 模式：交互式容器会话（多轮对话）
+nanogridbot shell                           # 默认（项目组：cli）
+nanogridbot shell -g myproject              # 指定项目文件夹
+nanogridbot shell --resume session-id       # 恢复之前的会话
+nanogridbot shell --attach                  # 附加到容器 shell
 
-# Chat 模式：单次交互
-nanogridbot chat "请解释什么是闭包"
-echo "问题" | nanogridbot chat                      # 管道输入
-nanogridbot chat -m "你是一个诗人" "写一首诗"       # 带消息历史
+# Run 模式：单次非交互式执行
+nanogridbot run -p "请解释什么是闭包"
+echo "问题" | nanogridbot run -p -           # 管道输入
+nanogridbot run -g mygroup -p "任务"         # 指定项目组
+nanogridbot run -p "任务" --timeout 60       # 自定义超时时间
+nanogridbot run -p "任务" -e KEY=VALUE       # 环境变量
 
-# Run 模式：群组执行
-nanogridbot run mygroup --context "分析这个bug"     # 执行任务
-nanogridbot run mygroup --send --context "发送结果" # 发送结果到群组
+# Logs 模式：查看和跟踪日志
+nanogridbot logs -n 100           # 显示最后100行
+nanogridbot logs -f               # 跟踪日志输出
+
+# Session 模式：管理交互式会话
+nanogridbot session ls            # 列出所有会话
+nanogridbot session kill <id>     # 终止会话
+nanogridbot session resume <id>   # 显示恢复信息
 ```
 
 ### LLM 参数
