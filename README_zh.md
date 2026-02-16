@@ -1,6 +1,6 @@
 # NanoGridBot
 
-> 🤖 基于 Claude Code 的智能体应用开发验证器与调试器
+> 🤖 智能体开发控制台 & 轻量级运行时
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -8,15 +8,15 @@
 
 ## 核心定位
 
-**NanoGridBot** 是一个专门为智能体（Agent）应用开发而设计的验证器与调试框架。
+**NanoGridBot** 是专为开发者打造的智能体开发控制台与轻量级运行时，用于构建、测试和部署跨平台的 AI 智能体。
 
-它源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 项目的容器隔离思路，但进行了根本性的架构升级——从单一消息代理扩展为完整的智能体应用开发平台。通过深度集成 Claude Code，NanoGridBot 提供了：
+虽然源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，但 NanoGridBot 已演化为完整的智能体开发平台——不仅支持 Claude Code，还支持多种 LLM：
 
-- 🧪 **智能体验证**：在隔离容器中安全运行和测试 Claude Agent
-- 🔧 **开发调试**：实时监控、日志分析、交互式调试
-- 📡 **多通道部署**：支持 8 种消息平台，一键部署到任意渠道
-- ⏰ **任务调度**：定时任务、周期任务、事件触发
-- 🔌 **插件系统**：灵活扩展功能，易于集成第三方服务
+- 🧪 **交互式开发**：Shell 模式实现实时智能体调试
+- ⚡ **轻量级运行时**：快速原型设计和测试，无需重型基础设施
+- 📡 **多通道部署**：支持 8 种消息平台，实现生产级环境测试
+- 🔌 **多 LLM 支持**：Claude、OpenAI、Anthropic API、自定义 LLM
+- 🛠️ **技能/插件/MCP**：通过技能、插件和 MCP 扩展能力
 
 ## 为何选择 NanoGridBot
 
@@ -28,11 +28,20 @@
 | **任务调度** | 外部 cron | 内置调度器 |
 | **扩展性** | 代码修改 | 插件热加载 |
 
+## 应用场景
+
+1. **交互式智能体开发** - 使用 `shell` 模式进行实时调试和探索
+2. **功能原型与测试** - 使用 `run` 模式快速验证提示词/功能
+3. **新功能验证** - 跨多通道测试，实现生产级环境验证
+4. **个人 AI 助手** - 使用 `serve` 模式部署日常使用
+5. **企业模块调试** - 在隔离容器中调试 AI 应用功能
+6. **任务自动化** - 使用内置调度器实现周期性任务
+
 ## 目录
 
 - [快速开始](#快速开始)
 - [架构设计](#架构设计)
-- [核心功能](#核心功能)
+- [核心能力](#核心能力)
 - [CLI 工具](#cli-工具)
 - [开发指南](#开发指南)
 - [部署方案](#部署方案)
@@ -162,12 +171,13 @@ NanoGridBot 从 NanoClaw 借鉴了容器隔离的核心思路，并进行了增�
 
 ---
 
-## 核心功能
+## 核心能力
 
-### 智能体开发支持
+### 容器化智能体运行时
 
-- ✅ **容器化执行**：Claude Agent 在隔离容器中运行，安全可控
-- ✅ **会话管理**：多轮对话支持，会话恢复能力
+- ✅ **多 LLM 支持**：Claude、OpenAI、Anthropic API、自定义 LLM
+- ✅ **容器隔离**：智能体在隔离的 Docker 容器中运行，安全可控
+- ✅ **会话管理**：多轮对话支持，会话持久化
 - ✅ **上下文管理**：为不同项目/群组维护独立上下文
 - ✅ **实时监控**：Web 面板实时查看 Agent 状态和输出
 - ✅ **交互式调试**：Shell 模式直接与 Agent 对话
@@ -355,7 +365,7 @@ docker-compose down
 ## 致谢
 
 - [NanoClaw](https://github.com/nanoclaw/nanoclaw) - 容器隔离思路的启发来源
-- [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/overview) - 智能体核心
+- 从"消息机器人"扩展为"智能体开发平台"
 - [FastAPI](https://fastapi.tiangolo.com/) - Web 框架
 - [Pydantic](https://docs.pydantic.dev/) - 数据验证
 

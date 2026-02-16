@@ -4,7 +4,9 @@ This file contains project-specific instructions for Claude Code.
 
 ## Project Overview
 
-NanoGridBot is a Python port of NanoClaw - a personal Claude AI assistant accessible via multiple messaging platforms (WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk).
+NanoGridBot is an **Agent Dev Console & Lightweight Runtime** - a comprehensive platform for building, testing, and deploying AI agents across multiple platforms.
+
+Not just Claude Code - supports multiple LLM providers (Claude, OpenAI, Anthropic, custom) plus Skills, Plugins, and MCP integration.
 
 ## Development Status
 
@@ -55,7 +57,15 @@ NanoGridBot is a Python port of NanoClaw - a personal Claude AI assistant access
 - Use pytest and pytest-asyncio
 - Target coverage > 80%
 
-## Supported Channels
+## Supported LLM Providers
+
+| Provider | SDK | Status |
+|----------|-----|--------|
+| Claude (Anthropic) | anthropic-sdk | ✅ Implemented |
+| OpenAI | openai | ✅ Implemented |
+| Custom LLM | httpx | ✅ Supported |
+
+## Supported Messaging Channels
 
 | Channel | SDK | Status |
 |---------|-----|--------|

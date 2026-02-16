@@ -1,6 +1,6 @@
 # NanoGridBot
 
-> 🤖 Agent Application Development Validator & Debugger Based on Claude Code
+> 🤖 Agent Dev Console & Lightweight Runtime
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -8,15 +8,15 @@
 
 ## Core Positioning
 
-**NanoGridBot** is a validator and debugging framework specifically designed for Agent application development.
+**NanoGridBot** is an Agent Dev Console & Lightweight Runtime built for developers who need to build, test, and deploy AI agents across multiple platforms.
 
-It originated from the container isolation concept in [NanoClaw](https://github.com/nanoclaw/nanoclaw), but underwent a fundamental architectural upgrade—from a single messaging proxy to a complete Agent application development platform. Through deep integration with Claude Code, NanoGridBot provides:
+While inspired by [NanoClaw](https://github.com/nanoclaw/nanoclaw)'s container isolation concept, NanoGridBot has evolved into a comprehensive agent development platform—not just Claude Code, but a multi-LLM runtime with:
 
-- 🧪 **Agent Validation**: Safely run and test Claude Agents in isolated containers
-- 🔧 **Development & Debugging**: Real-time monitoring, log analysis, interactive debugging
-- 📡 **Multi-Channel Deployment**: Support for 8 messaging platforms, deploy to any channel with one command
-- ⏰ **Task Scheduling**: Scheduled tasks, periodic tasks, event triggers
-- 🔌 **Plugin System**: Flexible functionality extension, easy third-party service integration
+- 🧪 **Interactive Development**: Shell mode for real-time agent debugging
+- ⚡ **Lightweight Runtime**: Fast prototyping and testing without heavy infrastructure
+- 📡 **Multi-Channel Ready**: Deploy across 8 messaging platforms for realistic environment testing
+- 🔌 **Multi-LLM Support**: Claude, OpenAI, Anthropic API, custom providers
+- 🛠️ **Skills/Plugins/MCP**: Extend capabilities with skills, plugins, and MCP integration
 
 ## Why NanoGridBot
 
@@ -28,11 +28,20 @@ It originated from the container isolation concept in [NanoClaw](https://github.
 | **Task Scheduling** | External cron | Built-in scheduler |
 | **Extensibility** | Code modifications | Plugin hot-reloading |
 
+## Use Cases
+
+1. **Interactive Agent Development** - Use `shell` mode for real-time debugging and exploration
+2. **Feature Prototyping & Testing** - Use `run` mode for quick prompt/feature validation
+3. **New Feature Validation** - Test across multiple channels for production-like environments
+4. **Personal AI Assistant** - Deploy with `serve` mode for daily use
+5. **Enterprise Module Debugging** - Debug AI application features in isolated containers
+6. **Task Automation** - Schedule recurring tasks with built-in scheduler
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
-- [Core Features](#core-features)
+- [Core Capabilities](#core-capabilities)
 - [CLI Tools](#cli-tools)
 - [Development](#development)
 - [Deployment](#deployment)
@@ -163,12 +172,13 @@ NanoGridBot borrowed the core container isolation concept from NanoClaw and enha
 
 ---
 
-## Core Features
+## Core Capabilities
 
-### Agent Development Support
+### Containerized Agent Runtime
 
-- ✅ **Containerized Execution**: Claude Agent runs in isolated containers, safe and controllable
-- ✅ **Session Management**: Multi-turn dialogue support, session recovery capability
+- ✅ **Multi-LLM Support**: Claude, OpenAI, Anthropic API, custom LLM providers
+- ✅ **Container Isolation**: Agents run in isolated Docker containers for security
+- ✅ **Session Management**: Multi-turn dialogue support with session persistence
 - ✅ **Context Management**: Independent context for different projects/groups
 - ✅ **Real-time Monitoring**: Web dashboard for Agent status and output
 - ✅ **Interactive Debugging**: Shell mode for direct Agent conversation
@@ -356,7 +366,7 @@ docker-compose down
 ## Acknowledgments
 
 - [NanoClaw](https://github.com/nanoclaw/nanoclaw) - Source of container isolation inspiration
-- [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/overview) - Agent core
+- Expanded from "messaging bot" to "agent development platform"
 - [FastAPI](https://fastapi.tiangolo.com/) - Web framework
 - [Pydantic](https://docs.pydantic.dev/) - Data validation
 

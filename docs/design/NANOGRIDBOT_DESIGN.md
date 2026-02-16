@@ -2,16 +2,18 @@
 
 ## 1. 项目概述
 
-**NanoGridBot** 是 NanoClaw 项目的 Python 1:1 移植版本，是一个轻量级、安全的个人 Claude AI 助手，通过 WhatsApp 提供交互界面，运行在容器化环境中以确保安全隔离。
+**NanoGridBot** 是智能体开发控制台与轻量级运行时，专为开发者打造，用于构建、测试和部署跨平台的 AI 智能体。
+
+源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，但已演化为完整的智能体开发平台——不仅支持 Claude Code，还支持多种 LLM（OpenAI、Anthropic API、自定义）。
 
 ### 1.1 核心特性
 
-- **极简设计**: 单进程架构，核心代码模块化
+- **多 LLM 支持**: Claude、OpenAI、Anthropic API、自定义 LLM
 - **容器隔离**: 使用 Docker 实现 OS 级别的安全隔离
-- **多组隔离**: 每个 WhatsApp 群组拥有独立的文件系统、会话和容器沙箱
+- **多组隔离**: 每个群组拥有独立的文件系统、会话和容器沙箱
 - **异步架构**: 基于 asyncio 的高性能异步处理
 - **类型安全**: 使用 Pydantic 进行数据验证和类型检查
-- **可扩展**: 支持多通道、插件系统、Web 监控
+- **可扩展**: 支持多通道、插件系统、Web 监控、MCP 集成
 
 ### 1.2 技术栈选择
 
