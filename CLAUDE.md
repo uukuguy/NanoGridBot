@@ -10,15 +10,17 @@ Not just Claude Code - supports multiple LLM providers (Claude, OpenAI, Anthropi
 
 ## Development Status
 
-**Current Phase**: Phase 15 - CLI Full Mode Implementation
+**Current Phase**: Phase 16 - Feature Framework Enhancement ✅
 
 - v0.1.0-alpha
 - Python 3.12+
 - asyncio-based async architecture
 - 8 messaging platforms supported
-- 4 CLI modes: serve, shell, chat, run
+- 6 CLI modes: serve, shell, chat, run, logs, session
 - Core orchestration, container runner, queue, scheduler, web dashboard implemented
 - Container-based CLI with ContainerSession support
+- Config hot-reload with ConfigWatcher
+- Metrics tracking with database/metrics.py
 
 ## Key Files
 
@@ -147,6 +149,12 @@ Not just Claude Code - supports multiple LLM providers (Claude, OpenAI, Anthropi
     - CLI refactored to container-based shell/chat/run modes
     - ContainerSession for interactive shell mode
     - Added Pydantic response models for web API
+
+16. **Phase 16**: Feature Framework Enhancement ✅
+    - Container env variables: `-e KEY=VALUE` support
+    - Config hot-reload: ConfigWatcher class with watchdog
+    - CLI enhancements: `logs` and `session` subcommands
+    - Metrics tracking: database/metrics.py with API endpoints
 
 ## Testing Commands
 
