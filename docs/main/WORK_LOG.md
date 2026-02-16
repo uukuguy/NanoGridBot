@@ -1,5 +1,63 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-17 - Rust 重写可行性评估
+
+### 工作概述
+
+对 NanoGridBot Python 代码库进行全面分析，评估 Rust 重写可行性。同时深入分析了 ZeroClaw（Rust）和 Nanobot（Python）两个参考项目，确定可复用资源和架构策略。
+
+### 完成的工作
+
+#### 1. Python 代码库分析
+- 全量分析 8,854 行源码，44 个 Python 文件
+- 逐模块评估 Rust 重写难度和收益
+- 完成 26 个 Python 依赖到 Rust crate 的映射
+
+#### 2. ZeroClaw（Rust）项目分析
+- 分析 `github.com/zeroclaw/` 全部源码（~7,269 行 channel 代码，1,017 测试）
+- 确认可直接复用：Channel trait + 4 个 channel（Telegram/Discord/Slack/WhatsApp）+ DockerRuntime
+- 架构对比结论：**只引入基础设施层，不向 ZeroClaw 架构倾斜**
+  - ZeroClaw = 单 Agent 守护进程（进程内调 LLM）
+  - NGB = 多组 Agent 控制台（容器封装 Claude Code）
+  - 两者是根本不同的架构范式
+
+#### 3. Nanobot（Python）项目分析
+- 分析 `github.com/nanobot/` 中国平台 channel 实现
+- 确认 DingTalk（245 LOC）、Feishu（310 LOC）、QQ（134 LOC）可作为 Rust 移植参考
+- 这些是 ZeroClaw 没有覆盖的关键补充
+
+#### 4. 架构决策
+- **存储**：Phase 1 用 NGB SQLite（运营数据），ZeroClaw Memory（语义搜索）后期可选
+- **扩展性**：保留 Plugin trait（生命周期 Hook），不复现 Python importlib，用 Rust 最佳实践
+- **插件系统**：静态编译 → WASM 分两步走
+- **Channel 策略**：先 Telegram + WeCom，ZeroClaw 直接引入 4 个，Nanobot 参考移植 3 个
+
+#### 5. 输出文档
+- `docs/design/RUST_REWRITE_DESIGN.md` — 完整的 Rust 重写设计文档
+  - 一、可行性评估（模块难度、依赖映射、收益、风险）
+  - 二、Rust 项目架构（Cargo workspace、依赖选型、预估代码量 ~16,450 LOC）
+  - 三、6 Phase 分阶段实施计划
+  - 四、Channel 实施顺序（含 ZeroClaw/Nanobot 复用清单）
+  - 五、架构决策（NGB vs ZeroClaw、存储、Plugin vs Skills）
+  - 六、验证方案
+
+### 关键决策记录
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| Crate 命名前缀 | `ngb-*` | 简洁，用户确认 |
+| Channel 首批 | Telegram + WeCom | teloxide 成熟 + WeCom 已是纯 HTTP |
+| 插件系统 | 静态编译 + 可选 WASM | 不复现 Python importlib，Rust 容器操控能力更强 |
+| 架构倾斜 | 不向 ZeroClaw 倾斜 | NGB 的多租户/容器封装/Web 仪表板是差异化价值 |
+| 存储方案 | NGB SQLite 为主 | 运营数据优先，语义搜索后期引入 |
+| Channel SDK | 统一用 reqwest（不用 teloxide/serenity） | 复用 ZeroClaw 模式，减少依赖 |
+
+### 下一步
+- 开始 Phase 1：创建 Cargo workspace，实现 ngb-types、ngb-config、ngb-db
+- 从 `src/nanogridbot/types.py` 开始移植 serde structs
+
+---
+
 ## 2026-02-16 - Phase 功能框架增强
 
 ### 工作概述

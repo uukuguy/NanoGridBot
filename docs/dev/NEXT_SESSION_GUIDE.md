@@ -2,50 +2,61 @@
 
 ## Current Status
 
-**Phase**: 架构与实施计划调整完成 ✅
+**Phase**: Rust 重写 - Phase 1 准备 🚀
 **Date**: 2026-02-17
-**Project Status**: PRODUCTION READY - Claude Agent SDK Driven 🎉
+**Branch**: build-by-rust
+**Project Status**: Rust 重写可行性评估完成，准备开始 Phase 1 实现
 
 ---
 
-## 2026-02-17 - 架构与实施计划调整完成
+## 2026-02-17 - Rust 重写可行性评估完成
 
-### 本次完成的工作
+### 本阶段成果
 
-根据 README 已更新的 Claude Agent SDK 驱动定位，同步调整架构设计和实施计划文档：
+完成了 NanoGridBot Python→Rust 重写的全面可行性评估，产出设计文档 `docs/design/RUST_REWRITE_DESIGN.md`。
 
-#### 1. NANOGRIDBOT_DESIGN.md 调整 ✅
+### 下一阶段：Phase 1 基础层实现
 
-- **项目概述**: 改为"基于 Claude Agent SDK 驱动的智能体开发控制台"
-- **核心特性优先级**: Claude Agent SDK 列为第一，Skills & MCP 验证列为第二
-- **技术栈**: 新增"智能体运行时: Claude Agent SDK"行
-- **新增 1.3 架构优势章节**:
-  - Claude Agent SDK 原生能力（Agent Teams, Session Resume, Transcript Archiving）
-  - MCP 深度集成（mcpServers 配置支持）
-  - Skills 零门槛验证
-  - 文件系统隔离
-  - 对话持久化（PreCompact Hook）
-  - IPC 消息流
-- **多通道定位**: 从"多通道支持"改为"多通道测试/模拟"，标注为测试用途而非首要构建目的
+**目标**：创建 Cargo workspace，实现基础 crate
 
-#### 2. IMPLEMENTATION_PLAN.md 调整 ✅
+#### 1. 创建 Cargo workspace 结构
+```
+crates/
+├── ngb-types/     # serde structs（参考 src/nanogridbot/types.py）
+├── ngb-config/    # 配置管理（参考 src/nanogridbot/config.py）
+├── ngb-db/        # sqlx SQLite（参考 src/nanogridbot/database/*.py）
+├── ngb-core/      # 核心运行时（Phase 2）
+├── ngb-channels/  # 消息通道（Phase 4）
+├── ngb-plugins/   # 插件系统（Phase 5）
+├── ngb-web/       # Web 仪表板（Phase 3）
+└── ngb-cli/       # CLI 入口（Phase 3）
+```
 
-- **项目概述**: 更新为"基于 Claude Agent SDK 驱动的智能体开发控制台"
-- **新增核心定位章节**: 列出三大定位点
+#### 2. Phase 1 具体任务
+1. `ngb-types`：移植 Pydantic 模型为 serde structs
+   - ChannelType, MessageRole, Message, RegisteredGroup, ContainerConfig, ScheduledTask, ContainerOutput
+2. `ngb-config`：config + dotenvy 配置管理
+3. `ngb-db`：sqlx SQLite 连接池 + 4 个 Repository（groups, messages, tasks, metrics）
+4. 工具模块：thiserror 错误类型、retry、circuit breaker、rate limiter、graceful shutdown
+5. 日志：tracing + tracing-subscriber
 
-### 修改的文件
-- `docs/design/NANOGRIDBOT_DESIGN.md`
-- `docs/design/IMPLEMENTATION_PLAN.md`
+#### 3. 关键注意事项
+- **不向 ZeroClaw 架构倾斜** — NGB 是多组 Agent 控制台，ZeroClaw 是单 Agent 守护进程
+- **Channel 统一用 reqwest** — 不用 teloxide/serenity，复用 ZeroClaw HTTP API 模式
+- **插件系统用 Rust 最佳实践** — 不复现 Python importlib
+- **从 ZeroClaw 只引入基础设施层** — Channel trait + 4 channel + DockerRuntime
+- **中国平台参考 Nanobot** — DingTalk/Feishu/QQ
 
-### 验证要点
-- ✅ 项目概述突出 Claude Agent SDK
-- ✅ 核心特性列表优先级正确
-- ✅ 架构优势章节内容完整
-- ✅ 8 消息平台标注为测试用途
-- ✅ 实施计划与新定位一致
+#### 4. 参考资源
+- 设计文档：`docs/design/RUST_REWRITE_DESIGN.md`
+- ZeroClaw 代码：`github.com/zeroclaw/src/`
+- Nanobot 代码：`github.com/nanobot/nanobot/channels/`
+- Python 源码：`src/nanogridbot/`
 
-### 下一步
-- 等待用户确认后提交 git
+### 验证标准
+- `cargo build` 编译通过
+- `cargo test` 通过类型序列化/反序列化测试 + 数据库 CRUD 测试
+- 数据库 schema 与 Python 版本兼容
 
 ---
 
