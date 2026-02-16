@@ -1,5 +1,50 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-16 - Phase 15 CLI全模式实现 & Bug修复
+
+### 工作概述
+
+修复项目中的关键bug，创建缺失的container_session模块，使项目可正常运行。
+
+### 完成的工作
+
+#### 1. 创建 container_session.py 模块
+- 路径: `src/nanogridbot/core/container_session.py`
+- 功能: 管理交互式shell模式的容器会话
+- 包含:
+  - `ContainerSession` 类
+  - `start()` - 启动命名容器（非--rm）
+  - `send()` - 通过IPC文件发送消息
+  - `receive()` - 从IPC文件接收消息
+  - `close()` - 关闭会话并清理容器
+  - `is_alive` 属性
+
+#### 2. 修复 __main__.py 导出
+- 添加 `ChannelRegistry`, `create_channels`, `start_web_server` 导出
+- 解决测试模块导入错误
+
+#### 3. 修复测试问题
+- `tests/unit/test_container_session.py`:
+  - 使用 `AsyncMock` 替代 `MagicMock` (stdin.write, stdin.close)
+  - 设置 `returncode = None` 确保 `is_alive` 检查正确
+- `container_session.py`:
+  - `is_alive` 属性使用 `== None` 替代 `is None`
+  - `receive()` 方法在 yield 前更新 session_id
+
+#### 4. 技术要点
+- 命名容器: 使用 `--name` 而非 `--rm`，支持会话恢复
+- IPC机制: 通过 `data_dir/ipc/{jid}/input` 和 `output` 目录交换JSON文件
+- 异步生成器: `receive()` 使用 `AsyncGenerator` 实现流式输出
+
+### 测试结果
+- 667 tests passed
+- 20 tests failing (集成测试需要外部API服务)
+
+### 待处理（可选）
+- 集成测试需要模拟Telegram/Slack等API或真实服务
+
+---
+
 ## 2026-02-16 - Phase 14 测试覆盖率达标 & 技术债务评估
 
 ### 工作概述

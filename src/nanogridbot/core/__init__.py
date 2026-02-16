@@ -1,11 +1,13 @@
 """Core modules for NanoGridBot orchestration."""
 
 from nanogridbot.core.container_runner import (
+    build_docker_command,
     check_docker_available,
     cleanup_container,
     get_container_status,
     run_container_agent,
 )
+from nanogridbot.core.container_session import ContainerSession
 from nanogridbot.core.group_queue import GroupQueue, GroupState
 from nanogridbot.core.ipc_handler import IpcHandler
 from nanogridbot.core.mount_security import (
@@ -30,6 +32,8 @@ __all__ = [
     # Routing
     "MessageRouter",
     # Container
+    "build_docker_command",
+    "ContainerSession",
     "run_container_agent",
     "check_docker_available",
     "get_container_status",
