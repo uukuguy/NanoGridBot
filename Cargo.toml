@@ -1,0 +1,63 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ngb-types",
+    "crates/ngb-config",
+    "crates/ngb-db",
+    "crates/ngb-core",
+    "crates/ngb-channels",
+    "crates/ngb-plugins",
+    "crates/ngb-web",
+    "crates/ngb-cli",
+]
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/user/NanoGridBot-rust"
+
+[workspace.dependencies]
+# Internal crates
+ngb-types = { path = "crates/ngb-types" }
+ngb-config = { path = "crates/ngb-config" }
+ngb-db = { path = "crates/ngb-db" }
+ngb-core = { path = "crates/ngb-core" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Config
+dotenvy = "0.15"
+notify = "7"
+
+# Utilities
+lru = "0.12"
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1

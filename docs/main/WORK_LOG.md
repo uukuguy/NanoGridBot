@@ -1,5 +1,98 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-17 - Rust 重写 Phase 1: 基础层实现
+
+### 工作概述
+
+在 `build-by-rust` 分支上完成 Rust 重写 Phase 1，创建 Cargo workspace 并实现 4 个基础 crate + 4 个 stub crate。
+
+### 完成的工作
+
+#### 1. Workspace 骨架
+- 创建 `Cargo.toml` workspace root，定义 8 个 crate 成员和共享依赖
+- 创建 `rust-toolchain.toml` (stable channel)
+- 更新 `.gitignore` 添加 `target/`
+- `[profile.release]` 配置 opt-level="z", lto=true, strip=true
+
+#### 2. ngb-types (零内部依赖) — 22 个测试
+- 4 个枚举: `ChannelType` (8 平台), `MessageRole`, `ScheduleType`, `TaskStatus`
+- 7 个结构体: `Message`, `RegisteredGroup`, `ContainerConfig`, `ScheduledTask`, `ContainerOutput`, `ContainerMetric`, `RequestMetric`
+- `NanoGridBotError` 枚举 (thiserror) + `Result<T>` 类型别名
+- 全部类型带 serde roundtrip 测试和默认值验证
+
+#### 3. ngb-config (依赖 ngb-types) — 10 个测试
+- `Config` 结构体: 40+ 字段，完整移植 Python config.py
+- `Config::load()`: dotenvy + 环境变量，带默认值
+- `get_config()` / `reload_config()`: OnceLock<RwLock<Config>> 线程安全单例
+- `get_channel_config(ChannelType)`: 按平台返回配置 HashMap
+- `create_directories()`: 自动创建 data/store/groups 等 8 个目录
+- `ConfigWatcher`: notify v7 文件监听，支持回调注册
+
+#### 4. ngb-db (依赖 ngb-types + ngb-config) — 27 个测试
+- `Database`: sqlx SqlitePool，WAL 模式，foreign_keys=ON，busy_timeout=5000ms
+- Schema: 5 张表 + 5 个索引（与 Python 版完全一致）
+- `MessageRepository`: store, get_since, get_new, get_recent, delete_old + LRU 缓存 (lru crate)
+- `GroupRepository`: save(upsert), get, get_all, get_by_folder, delete, exists
+- `TaskRepository`: save(insert/update), get, get_active, get_all, get_by_group, update_status, update_next_run, delete, get_due
+- `MetricsRepository`: record_container_start/end, get_container_stats, record_request, get_request_stats
+- 全部使用 in-memory SQLite 测试
+
+#### 5. ngb-core (依赖 ngb-types + ngb-config) — 32 个测试
+- **retry.rs**: `RetryConfig` + `with_retry<F>()` 泛型异步函数，指数退避
+- **circuit_breaker.rs**: 3 状态机 (Closed/Open/HalfOpen)，failure_threshold=5，recovery_timeout=30s
+- **shutdown.rs**: `GracefulShutdown` with tokio broadcast channel，SIGINT/SIGTERM 处理
+- **rate_limiter.rs**: 滑动窗口 `RateLimiter`，VecDeque<Instant>
+- **security.rs**: `validate_container_path()`, `sanitize_filename()`, `check_path_traversal()`
+- **formatting.rs**: `format_messages_xml()`, `format_output_xml()`, `escape_xml()`, `parse_input_json()`, `serialize_output()`
+- **logging.rs**: tracing + tracing-subscriber，console (ANSI) + file (rolling) 层
+
+#### 6. Stub Crates (Phase 2+ 占位)
+- ngb-channels (Phase 4)
+- ngb-plugins (Phase 5)
+- ngb-web (Phase 3)
+- ngb-cli (Phase 3, `fn main()` 占位)
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo build` | ✅ 8 crate 全部编译 |
+| `cargo test` | ✅ 91 个测试全部通过 |
+| `cargo clippy -- -D warnings` | ✅ 零警告 |
+| `cargo fmt -- --check` | ✅ 格式合规 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| SQL 查询方式 | `sqlx::query()` (运行时) | 避免编译时需要 DATABASE_URL |
+| 时间戳格式 | ISO 8601 / RFC 3339 字符串 | 与 Python SQLite 格式兼容 |
+| Config 单例 | `OnceLock<RwLock<Config>>` | 线程安全，支持 reload |
+| LRU 缓存 | `std::sync::Mutex<lru::LruCache>` | 快速操作，无 I/O |
+| 文件监听 | notify v7 (独立线程) | 不与 tokio 事件循环冲突 |
+
+### 依赖图
+
+```
+ngb-types (零依赖)
+    ↓
+ngb-config (← ngb-types)
+    ↓           ↓
+ngb-db      ngb-core
+(← types    (← types + config)
+ + config)
+
+ngb-channels, ngb-plugins, ngb-web (← ngb-types only, stubs)
+ngb-cli (← ngb-types only, stub)
+```
+
+### 下一步: Phase 2
+
+- 实现 Runtime 层: Orchestrator, Router, ContainerRunner, GroupQueue, TaskScheduler, IpcHandler
+- 将在 ngb-core 中扩展这些模块
+
+---
+
 ## 2026-02-17 - Rust 重写可行性评估
 
 ### 工作概述
