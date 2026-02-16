@@ -1,211 +1,247 @@
 # NanoGridBot
 
-> 🤖 Lightweight, Secure Personal Claude AI Assistant - Python Port of NanoClaw
+> 🤖 Agent Application Development Validator & Debugger Based on Claude Code
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-NanoGridBot is a complete Python port of [NanoClaw](https://github.com/nanoclaw/nanoclaw), providing a personal Claude AI assistant accessible via multiple messaging platforms with container isolation, multi-group support, and extensible architecture.
+## Core Positioning
 
-## ✨ Key Features
+**NanoGridBot** is a validator and debugging framework specifically designed for Agent application development.
 
-- 🔒 **Container Isolation**: OS-level security isolation using Docker
-- 👥 **Multi-Group Isolation**: Each messaging group has its own filesystem and session
-- ⚡ **Async Architecture**: High-performance design based on asyncio
-- 🎯 **Type Safety**: Runtime data validation using Pydantic
-- 🔌 **Extensible**: Plugin system, multi-channel support, web monitoring
-- 📊 **Web Monitoring**: Real-time system status and task management
-- 🔄 **Task Scheduling**: Cron, interval, and one-time task support
-- 🌐 **Multi-Channel**: WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk
-- 💬 **CLI Modes**: serve, shell, chat, run - flexible interaction patterns
+It originated from the container isolation concept in [NanoClaw](https://github.com/nanoclaw/nanoclaw), but underwent a fundamental architectural upgrade—from a single messaging proxy to a complete Agent application development platform. Through deep integration with Claude Code, NanoGridBot provides:
 
-## 📋 Table of Contents
+- 🧪 **Agent Validation**: Safely run and test Claude Agents in isolated containers
+- 🔧 **Development & Debugging**: Real-time monitoring, log analysis, interactive debugging
+- 📡 **Multi-Channel Deployment**: Support for 8 messaging platforms, deploy to any channel with one command
+- ⏰ **Task Scheduling**: Scheduled tasks, periodic tasks, event triggers
+- 🔌 **Plugin System**: Flexible functionality extension, easy third-party service integration
+
+## Why NanoGridBot
+
+| Feature | Traditional Development | NanoGridBot |
+|---------|------------------------|-------------|
+| **Agent Runtime** | Manual configuration needed | Automatic container isolation |
+| **Multi-Channel Deployment** | Separate development per platform | Unified API, 8 platforms auto-adapted |
+| **Debugging Experience** | Logs + print statements | Web real-time monitoring + CLI interaction |
+| **Task Scheduling** | External cron | Built-in scheduler |
+| **Extensibility** | Code modifications | Plugin hot-reloading |
+
+## Table of Contents
 
 - [Quick Start](#quick-start)
 - [Architecture](#architecture)
-- [Features](#features)
+- [Core Features](#core-features)
+- [CLI Tools](#cli-tools)
 - [Development](#development)
 - [Deployment](#deployment)
 - [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
 
-## 🚀 Quick Start
+---
+
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.12+
 - Docker
-- Node.js 20+ (for WhatsApp bridge)
 - Git
 
 ### Installation
 
-**推荐方式：使用 uv（更快）**
-
 ```bash
-# 安装uv（如果还没有）
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 克隆仓库
+# Clone repository
 git clone https://github.com/yourusername/nanogridbot.git
 cd nanogridbot
 
-# 使用uv同步依赖（自动创建虚拟环境）
+# Install with uv (recommended)
 uv sync
 
-# 构建Docker镜像
+# Build Agent container image
 docker build -t nanogridbot-agent:latest container/
 
-# 启动服务
-uv run nanogridbot
+# Start service
+uv run nanogridbot serve
 ```
 
-**传统方式：使用 pip**
+### Four Running Modes
 
 ```bash
-# 克隆仓库
-git clone https://github.com/yourusername/nanogridbot.git
-cd nanogridbot
-
-# 创建虚拟环境
-python3.12 -m venv .venv
-source .venv/bin/activate
-
-# 安装依赖
-pip install -e ".[dev]"
-
-# 构建Docker镜像
-docker build -t nanogridbot-agent:latest container/
-
-# 启动服务
-python -m nanogridbot
-```
-
-### Docker Compose Deployment
-
-```bash
-docker-compose up -d
-```
-
-See [Quick Start Guide](docs/main/QUICK_START.md) for detailed installation instructions.
-
-### CLI Usage
-
-NanoGridBot provides 4 CLI modes:
-
-```bash
-# Serve mode (default) - Start orchestrator + web dashboard
+# 1. Serve mode: Start full service with Web dashboard
 nanogridbot serve
 nanogridbot serve --host 0.0.0.0 --port 8080
 
-# Shell mode - Interactive container-backed REPL
+# 2. Shell mode: Interactive debugging REPL
 nanogridbot shell
 nanogridbot shell --model claude-sonnet-4-20250514
 
-# Chat mode - Single-shot message, print response, exit
-nanogridbot chat "Your prompt here"
-echo "Your prompt" | nanogridbot chat
+# 3. Chat mode: Single prompt testing
+nanogridbot chat "Explain what recursion is"
+echo "Your question" | nanogridbot chat
 
-# Run mode - Execute prompt against registered group
-nanogridbot run mygroup --context "Your task"
-nanogridbot run mygroup --send --context "Your task"
+# 4. Run mode: Execute tasks on registered groups
+nanogridbot run myproject --context "Analyze this code performance"
+nanogridbot run myproject --send --context "Send report"
 ```
 
-## 🏗️ Architecture
+---
 
-### System Architecture
+## Architecture
+
+### Design Philosophy
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    NanoGridBot Main Process                  │
-│  • Message Polling (2s interval)                           │
-│  • Multi-Channel Support (WhatsApp/Telegram/Slack/...)     │
-│  • SQLite State Persistence                                │
-│  • GroupQueue (Concurrency Control)                        │
-│  • Task Scheduler (Cron)                                   │
-│  • IPC Handler (File System)                               │
-└────────────────────┬────────────────────────────────────────┘
-                     │ Docker Container Start
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Agent Container (Docker)                        │
-│  • Claude Agent SDK Execution                              │
-│  • Isolated Filesystem (Explicit Mounts)                   │
-│  • Non-root User (node:1000)                               │
-│  • Chromium Browser Automation                             │
-│  • IPC File Watching (follow-up messages)                 │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                 NanoGridBot Agent Development Platform             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
+│   │   CLI Tools  │    │ Web Dashboard│    │    Channels  │   │
+│   │(Debug/Test)  │    │ (Status/Logs)│    │(Multi-platform│   │
+│   └──────┬───────┘    └──────┬───────┘    └──────┬───────┘   │
+│          │                    │                    │           │
+│          └────────────────────┼────────────────────┘           │
+│                               ▼                                │
+│   ┌────────────────────────────────────────────────────────┐   │
+│   │              Core Orchestration Layer                   │   │
+│   │   • Message Routing  • Task Scheduling  • Container   │   │
+│   │   • Plugin Loading  • Group Queue                     │   │
+│   └─────────────────────────┬──────────────────────────┘   │
+│                               │                               │
+│                               ▼                               │
+│   ┌────────────────────────────────────────────────────────┐   │
+│   │              Container Isolation Layer                   │   │
+│   │   • Docker Container  • Filesystem Isolation  • IPC  │   │
+│   │   • Claude Agent SDK  • Session Management           │   │
+│   └────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Core Modules
 
 | Module | Responsibility | File |
 |--------|----------------|------|
-| **Orchestrator** | Main coordinator, global state and message loop | `core/orchestrator.py` |
-| **Container Runner** | Container lifecycle and mount configuration | `core/container_runner.py` |
-| **Group Queue** | Group queue and concurrency control | `core/group_queue.py` |
-| **Task Scheduler** | Scheduled task dispatch | `core/task_scheduler.py` |
-| **IPC Handler** | Inter-process communication | `core/ipc_handler.py` |
-| **Database** | SQLite data persistence | `database/db.py` |
-| **Channels** | Channel abstraction layer | `channels/` |
+| **Orchestrator** | Global state management, message loop, channel coordination | `core/orchestrator.py` |
+| **ContainerRunner** | Container lifecycle, mount configuration | `core/container_runner.py` |
+| **ContainerSession** | Interactive session management, IPC communication | `core/container_session.py` |
+| **GroupQueue** | Concurrency control, message queuing, retry mechanism | `core/group_queue.py` |
+| **TaskScheduler** | Cron/Interval/OneTime task scheduling | `core/task_scheduler.py` |
+| **Router** | Message routing, trigger matching, broadcasting | `core/router.py` |
+| **Database** | SQLite persistence, message cache | `database/` |
+| **Channels** | 8 messaging platform adapters | `channels/` |
 
-See [Architecture Design Document](docs/design/NANOGRIDBOT_DESIGN.md) for details.
+### Container Isolation Design
 
-## 🎯 Features
+NanoGridBot borrowed the core container isolation concept from NanoClaw and enhanced it:
 
-### Core Features
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Host System (NanoGridBot)                │
+│  ┌─────────────────────────────────────────────────────┐ │
+│  │              Agent Container (Docker)                │ │
+│  │  • Claude Agent SDK                                  │ │
+│  │  • Non-root user (node:1000)                        │ │
+│  │  • Explicit mounts (whitelist only)                 │ │
+│  │  • Network isolation (--network=none)               │ │
+│  │  • IPC file watching (follow-up messages)           │ │
+│  └─────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ JSON via stdin/stdout
+                              │ OR IPC files
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Host System (NanoGridBot)                │
+│  • Message polling (2s interval)                           │
+│  • SQLite state persistence                                │
+│  • Group queue (concurrency control)                       │
+│  • Task scheduling (Cron)                                 │
+└─────────────────────────────────────────────────────────────┘
+```
 
-- ✅ **Message Processing**: Auto-process messages with trigger word filtering
-- ✅ **Container Isolation**: Each group runs in isolated containers
-- ✅ **Session Management**: Multi-turn dialogue and session recovery
-- ✅ **Task Scheduling**: Cron, interval, and one-time tasks
-- ✅ **IPC Communication**: Container-host communication via filesystem
-- ✅ **Mount Security**: External whitelist validation, path traversal prevention
+---
+
+## Core Features
+
+### Agent Development Support
+
+- ✅ **Containerized Execution**: Claude Agent runs in isolated containers, safe and controllable
+- ✅ **Session Management**: Multi-turn dialogue support, session recovery capability
+- ✅ **Context Management**: Independent context for different projects/groups
+- ✅ **Real-time Monitoring**: Web dashboard for Agent status and output
+- ✅ **Interactive Debugging**: Shell mode for direct Agent conversation
+
+### Multi-Channel Deployment
+
+| Channel | SDK | Status |
+|---------|-----|--------|
+| WhatsApp | pywa | ✅ |
+| Telegram | python-telegram-bot | ✅ |
+| Slack | python-slack-sdk | ✅ |
+| Discord | discord.py | ✅ |
+| QQ | NoneBot2/OneBot | ✅ |
+| Feishu | lark-oapi | ✅ |
+| WeCom | httpx | ✅ |
+| DingTalk | dingtalk-stream | ✅ |
 
 ### Extended Features
 
-- 🔌 **Plugin System**: Custom plugins for extended functionality
-- 📊 **Web Monitoring**: Real-time system status and task management
-- 🌐 **Multi-Channel**: WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk
-- 🔍 **Message Search**: Full-text search of message history
-- 📈 **Metrics Export**: Prometheus-formatted system metrics
-- 🚦 **Rate Limiting**: Abuse prevention and overload protection
+- 🔌 **Plugin System**: Hot-reload plugins, custom processing logic
+- 📊 **Web Dashboard**: Real-time status, task management, log viewing
+- 🔄 **Task Scheduling**: Cron expressions, interval tasks, one-time tasks
+- 🔒 **Security Isolation**: Mount whitelist, path traversal protection
 
-### Supported Channels
+---
 
-| Channel | SDK | Difficulty |
-|---------|-----|------------|
-| WhatsApp | Baileys Bridge | ⭐⭐ |
-| Telegram | python-telegram-bot | ⭐⭐ |
-| Slack | python-slack-sdk | ⭐⭐ |
-| Discord | discord.py | ⭐⭐ |
-| QQ | NoneBot2/OneBot | ⭐⭐⭐ |
-| 飞书 (Feishu) | lark-oapi | ⭐⭐⭐ |
-| 企业微信 (WeCom) | httpx (native) | ⭐⭐ |
-| 钉钉 (DingTalk) | dingtalk-stream-sdk | ⭐⭐ |
+## CLI Tools
 
-### Usage Examples
+### Command Reference
 
+```bash
+# Help
+nanogridbot --help
+
+# Version
+nanogridbot --version
+
+# Serve mode: Full service
+nanogridbot serve                    # Default
+nanogridbot serve --host 0.0.0.0  # Custom address
+nanogridbot serve --port 9000      # Custom port
+nanogridbot serve --debug          # Debug mode
+
+# Shell mode: Interactive REPL
+nanogridbot shell                                    # Default
+nanogridbot shell --model claude-sonnet-4-20250514 # Specify model
+nanogridbot shell --system "You are a Python expert" # System prompt
+
+# Chat mode: Single interaction
+nanogridbot chat "Explain what closures are"
+echo "Question" | nanogridbot chat                   # Pipe input
+nanogridbot chat -m "You are a poet" "Write a poem" # With history
+
+# Run mode: Group execution
+nanogridbot run mygroup --context "Analyze this bug"
+nanogridbot run mygroup --send --context "Send results"
 ```
-# Send message
-@Andy help me analyze this code performance issue
 
-# Create scheduled task
-@Andy schedule task
-Prompt: Send weather forecast every morning at 8am
-Schedule type: cron
-Cron expression: 0 8 * * *
+### LLM Parameters
 
-# List tasks
-@Andy list tasks
+All CLI modes support shared LLM parameters:
 
-# Register new group
-@Andy register group
+```bash
+--model MODEL              # Model name (default: claude-sonnet-4-20250514)
+--max-tokens MAX_TOKENS   # Max tokens (default: 4096)
+--temperature TEMP        # Temperature (default: 0.7)
+--system SYSTEM           # System prompt
+--stream                  # Stream output
 ```
 
-## 🛠️ Development
+---
+
+## Development
 
 ### Project Structure
 
@@ -213,84 +249,44 @@ Cron expression: 0 8 * * *
 nanogridbot/
 ├── src/nanogridbot/       # Source code
 │   ├── core/              # Core modules
-│   ├── database/           # Database
-│   ├── channels/          # Channel implementations
+│   │   ├── orchestrator.py
+│   │   ├── container_runner.py
+│   │   ├── container_session.py
+│   │   ├── group_queue.py
+│   │   ├── task_scheduler.py
+│   │   ├── router.py
+│   │   └── mount_security.py
+│   ├── database/           # Database layer
+│   ├── channels/          # Messaging channels
 │   ├── plugins/           # Plugin system
-│   └── web/               # Web monitoring
+│   ├── web/               # Web dashboard
+│   └── cli.py             # CLI entry
 ├── container/             # Agent container
-├── bridge/                # Baileys bridge
-├── groups/                # Group working directories
-├── data/                  # Runtime data
-├── store/                 # Persistent storage
 ├── tests/                 # Tests
-└── docs/                  # Documentation
+├── docs/                  # Documentation
+└── data/                  # Runtime data
 ```
 
-### Running Tests
-
-**使用 uv（推荐）**
+### Development Commands
 
 ```bash
-# 运行所有测试
-uv run pytest
+# Run tests
+pytest -xvs
 
-# 运行测试并生成覆盖率报告
-uv run pytest --cov=src --cov-report=html
-
-# 运行特定测试
-uv run pytest tests/unit/test_database.py -v
-```
-
-**传统方式**
-
-```bash
-# 运行所有测试
-pytest
-
-# 运行测试并生成覆盖率报告
+# Coverage report
 pytest --cov=src --cov-report=html
 
-# 运行特定测试
-pytest tests/unit/test_database.py -v
-```
+# Code formatting
+black . && isort .
 
-### Code Quality
-
-**使用 uv（推荐）**
-
-```bash
-# 格式化代码
-uv run black src/ tests/
-
-# 排序导入
-uv run isort src/ tests/
-
-# 运行代码检查
-uv run ruff check src/ tests/
-
-# 类型检查
-uv run mypy src/
-```
-
-**传统方式**
-
-```bash
-# 格式化代码
-black src/ tests/
-
-# 排序导入
-isort src/ tests/
-
-# 运行代码检查
-ruff check src/ tests/
-
-# 类型检查
+# Type checking
 mypy src/
+
+# Linting
+ruff check .
 ```
 
-### Plugin Development
-
-Create custom plugins:
+### Create Plugin
 
 ```python
 # plugins/my_plugin/plugin.py
@@ -301,21 +297,14 @@ class MyPlugin(Plugin):
     def name(self) -> str:
         return "my_plugin"
 
-    @property
-    def version(self) -> str:
-        return "1.0.0"
-
-    async def initialize(self, config: dict):
-        pass
-
     async def on_message_received(self, message):
         # Process message
         return message
 ```
 
-See [Development Guide](docs/main/QUICK_START.md#development-guide) for details.
+---
 
-## 🚢 Deployment
+## Deployment
 
 ### Docker Deployment
 
@@ -333,99 +322,52 @@ docker-compose logs -f
 docker-compose down
 ```
 
-### Production Deployment
+### Production Configuration
 
 1. Configure environment variables
 2. Set mount whitelist
 3. Configure reverse proxy (Nginx)
 4. Enable HTTPS
-5. Configure monitoring and alerts
+5. Configure monitoring alerts
 
-See [Implementation Plan](docs/design/IMPLEMENTATION_PLAN.md) for deployment details.
+---
 
-## 📚 Documentation
+## Documentation
 
 ### Design Documents
 
 - [Architecture Design](docs/design/NANOGRIDBOT_DESIGN.md) - Detailed module design and code examples
-- [Implementation Plan](docs/design/IMPLEMENTATION_PLAN.md) - Development phases and task breakdown
-- [Channel Feasibility Assessment](docs/design/CHANNEL_FEASIBILITY_ASSESSMENT.md) - Multi-platform evaluation
-- [Analysis Summary](docs/main/ANALYSIS_SUMMARY.md) - NanoClaw project analysis
+- [Implementation Plan](docs/design/IMPLEMENTATION_PLAN.md) - Development phase planning
+- [Project Comparison Analysis](docs/design/PROJECT_COMPARISON_ANALYSIS.md) - Comparison with similar projects
 
 ### User Documents
 
 - [Quick Start](docs/main/QUICK_START.md) - Installation and usage guide
-- [Configuration](docs/main/QUICK_START.md#configuration) - Environment variables and config files
-- [Troubleshooting](docs/main/QUICK_START.md#troubleshooting) - Common issues and solutions
+- [Work Log](docs/main/WORK_LOG.md) - Development progress
 
-### API Documentation
+### Testing Documents
 
-- Web API docs: `http://localhost:8000/docs` (after starting service)
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/my-feature`
-3. Commit changes: `git commit -am 'Add my feature'`
-4. Push branch: `git push origin feature/my-feature`
-5. Create Pull Request
-
-### Contribution Guidelines
-
-- Follow PEP 8 code style
-- Format code with Black
-- Add type annotations
-- Write unit tests
-- Update documentation
-
-## 📊 Performance Targets
-
-| Metric | Target | Actual |
-|--------|--------|--------|
-| Message Latency | < 2 sec | TBD |
-| Container Startup | < 5 sec | TBD |
-| Concurrent Containers | 5-10 | TBD |
-| Memory Usage | < 500MB | TBD |
-| Test Coverage | > 80% | TBD |
-
-## 🔒 Security
-
-### Security Features
-
-- Container isolation (non-root user)
-- Mount whitelist validation
-- Path traversal protection
-- Sensitive directory blacklist
-- API authentication/authorization
-- Rate limiting
-
-### Reporting Security Issues
-
-If you discover a security vulnerability, please email security@example.com instead of public disclosure.
-
-## 📝 License
-
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file.
-
-## 🙏 Acknowledgments
-
-- [NanoClaw](https://github.com/nanoclaw/nanoclaw) - Original TypeScript implementation
-- [Baileys](https://github.com/WhiskeySockets/Baileys) - WhatsApp Web API
-- [FastAPI](https://fastapi.tiangolo.com/) - Web framework
-- [Pydantic](https://docs.pydantic.dev/) - Data validation
-
-## 📞 Contact
-
-- GitHub: https://github.com/yourusername/nanogridbot
-- Issues: https://github.com/yourusername/nanogridbot/issues
-- Discussions: https://github.com/yourusername/nanogridbot/discussions
+- [Test Strategy](docs/testing/TEST_STRATEGY.md)
+- [Test Cases](docs/testing/TEST_CASES.md)
+- [Environment Setup](docs/testing/ENVIRONMENT_SETUP.md)
 
 ---
 
-**Development Status**: ✅ Phase 1-15 Complete
+## Acknowledgments
 
-**Current Version**: v0.1.0-alpha
+- [NanoClaw](https://github.com/nanoclaw/nanoclaw) - Source of container isolation inspiration
+- [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/overview) - Agent core
+- [FastAPI](https://fastapi.tiangolo.com/) - Web framework
+- [Pydantic](https://docs.pydantic.dev/) - Data validation
+
+---
+
+## License
+
+MIT License - See [LICENSE](LICENSE) file.
+
+---
+
+**Version**: v0.1.0-alpha
 
 **Last Updated**: 2026-02-16
