@@ -1,22 +1,18 @@
-# NanoGridBot
+# {🦑} NanoGridBot
 
-> 🤖 Agent Dev Console & Lightweight Runtime
+> NanoGridBot - AI Agent Development Console & Multi-Platform Runtime. Build, test, and deploy AI agents across 8 messaging platforms with container isolation, multi-LLM support, and interactive debugging tools.
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-## Core Positioning
-
-**NanoGridBot** is an Agent Dev Console & Lightweight Runtime built for developers who need to build, test, and deploy AI agents across multiple platforms.
-
-While inspired by [NanoClaw](https://github.com/nanoclaw/nanoclaw)'s container isolation concept, NanoGridBot has evolved into a comprehensive agent development platform—not just Claude Code, but a multi-LLM runtime with:
+**NanoGridBot** is a comprehensive agent development platform designed for building, testing, and deploying AI agents across multiple messaging platforms. It provides:
 
 - 🧪 **Interactive Development**: Shell mode for real-time agent debugging
 - ⚡ **Lightweight Runtime**: Fast prototyping and testing without heavy infrastructure
 - 📡 **Multi-Channel Ready**: Deploy across 8 messaging platforms for realistic environment testing
 - 🔌 **Multi-LLM Support**: Claude, OpenAI, Anthropic API, custom providers
-- 🛠️ **Skills/Plugins/MCP**: Extend capabilities with skills, plugins, and MCP integration
+- 🛠️ **5 CLI Modes**: serve, shell, run, logs, session
 
 ## Why NanoGridBot
 
@@ -74,24 +70,32 @@ docker build -t nanogridbot-agent:latest container/
 uv run nanogridbot serve
 ```
 
-### Four Running Modes
+### Five Running Modes
 
 ```bash
 # 1. Serve mode: Start full service with Web dashboard
 nanogridbot serve
 nanogridbot serve --host 0.0.0.0 --port 8080
 
-# 2. Shell mode: Interactive debugging REPL
+# 2. Shell mode: Interactive container session (multi-turn conversation)
 nanogridbot shell
-nanogridbot shell --model claude-sonnet-4-20250514
+nanogridbot shell -g myproject                    # Specify group
+nanogridbot shell --resume session-id             # Resume previous session
 
-# 3. Chat mode: Single prompt testing
-nanogridbot chat "Explain what recursion is"
-echo "Your question" | nanogridbot chat
+# 3. Run mode: Single-shot non-interactive execution
+nanogridbot run -p "Explain what recursion is"
+echo "Your question" | nanogridbot run -p -
+nanogridbot run -g myproject -p "Analyze code"    # Specify group
+nanogridbot run -g myproject -p "Task" --timeout 60 --env KEY=VALUE
 
-# 4. Run mode: Execute tasks on registered groups
-nanogridbot run myproject --context "Analyze this code performance"
-nanogridbot run myproject --send --context "Send report"
+# 4. Logs mode: View and follow logs
+nanogridbot logs -n 100           # Show last 100 lines
+nanogridbot logs -f               # Follow log output
+
+# 5. Session mode: Manage interactive sessions
+nanogridbot session ls            # List sessions
+nanogridbot session kill <id>     # Terminate session
+nanogridbot session resume <id>   # Show resume info
 ```
 
 ---
@@ -216,25 +220,33 @@ nanogridbot --help
 # Version
 nanogridbot --version
 
-# Serve mode: Full service
+# Serve mode: Full service with web dashboard
 nanogridbot serve                    # Default
 nanogridbot serve --host 0.0.0.0  # Custom address
 nanogridbot serve --port 9000      # Custom port
 nanogridbot serve --debug          # Debug mode
 
-# Shell mode: Interactive REPL
-nanogridbot shell                                    # Default
-nanogridbot shell --model claude-sonnet-4-20250514 # Specify model
-nanogridbot shell --system "You are a Python expert" # System prompt
+# Shell mode: Interactive container session (multi-turn)
+nanogridbot shell                           # Default (group: cli)
+nanogridbot shell -g myproject              # Specify group folder
+nanogridbot shell --resume session-id      # Resume previous session
+nanogridbot shell --attach                  # Attach to container shell
 
-# Chat mode: Single interaction
-nanogridbot chat "Explain what closures are"
-echo "Question" | nanogridbot chat                   # Pipe input
-nanogridbot chat -m "You are a poet" "Write a poem" # With history
+# Run mode: Single-shot non-interactive execution
+nanogridbot run -p "Explain what closures are"
+echo "Question" | nanogridbot run -p -      # Pipe input
+nanogridbot run -g mygroup -p "Task"        # Specify group
+nanogridbot run -p "Task" --timeout 60      # Custom timeout
+nanogridbot run -p "Task" -e KEY=VALUE      # Environment variables
 
-# Run mode: Group execution
-nanogridbot run mygroup --context "Analyze this bug"
-nanogridbot run mygroup --send --context "Send results"
+# Logs mode: View and follow logs
+nanogridbot logs -n 100           # Show last 100 lines
+nanogridbot logs -f               # Follow log output
+
+# Session mode: Manage interactive sessions
+nanogridbot session ls            # List all sessions
+nanogridbot session kill <id>     # Terminate a session
+nanogridbot session resume <id>   # Show resume info
 ```
 
 ### LLM Parameters
