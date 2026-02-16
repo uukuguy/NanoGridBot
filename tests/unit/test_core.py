@@ -140,7 +140,7 @@ without JSON formatting
 
     def test_build_docker_command(self):
         """Test building docker command."""
-        from nanogridbot.core.container_runner import _build_docker_command
+        from nanogridbot.core.container_runner import build_docker_command
 
         mounts = [
             ("/path/to/group", "/workspace/group", "rw"),
@@ -161,7 +161,7 @@ without JSON formatting
                 container_timeout=300,
             )
 
-            cmd = _build_docker_command(mounts, input_data, 300)
+            cmd = build_docker_command(mounts, input_data, 300)
 
             assert "docker" in cmd
             assert "run" in cmd

@@ -63,7 +63,7 @@ async def run_container_agent(
     }
 
     # Build docker command
-    cmd = _build_docker_command(
+    cmd = build_docker_command(
         mounts=mounts,
         input_data=input_data,
         timeout=timeout or config.container_timeout,
@@ -199,7 +199,7 @@ def _parse_output(output: str) -> ContainerOutput | None:
     return None
 
 
-def _build_docker_command(
+def build_docker_command(
     mounts: list[tuple[str, str, str]],
     input_data: dict[str, Any],
     timeout: int,

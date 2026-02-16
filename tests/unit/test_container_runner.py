@@ -10,7 +10,7 @@ import pytest
 from nanogridbot.core.container_runner import (
     OUTPUT_END_MARKER,
     OUTPUT_START_MARKER,
-    _build_docker_command,
+    build_docker_command,
     _parse_output,
     check_docker_available,
     cleanup_container,
@@ -110,7 +110,7 @@ some content here"""
 
 
 class TestBuildDockerCommand:
-    """Test _build_docker_command function."""
+    """Test build_docker_command function."""
 
     def test_basic_command(self):
         """Test basic docker command construction."""
@@ -119,7 +119,7 @@ class TestBuildDockerCommand:
 
         with patch("nanogridbot.core.container_runner.get_config") as mock_cfg:
             mock_cfg.return_value = MagicMock(container_image="test-image:latest")
-            cmd = _build_docker_command(mounts, input_data, 300)
+            cmd = build_docker_command(mounts, input_data, 300)
 
         assert cmd[0] == "docker"
         assert cmd[1] == "run"
@@ -136,7 +136,7 @@ class TestBuildDockerCommand:
 
         with patch("nanogridbot.core.container_runner.get_config") as mock_cfg:
             mock_cfg.return_value = MagicMock(container_image="img:latest")
-            cmd = _build_docker_command(mounts, input_data, 300)
+            cmd = build_docker_command(mounts, input_data, 300)
 
         assert "/host/a:/container/a:rw" in cmd
         assert "/host/b:/container/b:ro" in cmd
@@ -148,7 +148,7 @@ class TestBuildDockerCommand:
 
         with patch("nanogridbot.core.container_runner.get_config") as mock_cfg:
             mock_cfg.return_value = MagicMock(container_image="img:latest")
-            cmd = _build_docker_command(mounts, input_data, 300)
+            cmd = build_docker_command(mounts, input_data, 300)
 
         assert "NANOGRIDBOT_IS_MAIN=true" in cmd
         assert "NANOGRIDBOT_GROUP=mygroup" in cmd
@@ -160,7 +160,7 @@ class TestBuildDockerCommand:
 
         with patch("nanogridbot.core.container_runner.get_config") as mock_cfg:
             mock_cfg.return_value = MagicMock(container_image="img:latest")
-            cmd = _build_docker_command(mounts, input_data, 300)
+            cmd = build_docker_command(mounts, input_data, 300)
 
         assert "--memory" in cmd
         assert "2g" in cmd
@@ -174,7 +174,7 @@ class TestBuildDockerCommand:
 
         with patch("nanogridbot.core.container_runner.get_config") as mock_cfg:
             mock_cfg.return_value = MagicMock(container_image="img:latest")
-            cmd = _build_docker_command(mounts, input_data, 600)
+            cmd = build_docker_command(mounts, input_data, 600)
 
         idx = cmd.index("--stop-timeout")
         assert cmd[idx + 1] == "600"
@@ -188,7 +188,7 @@ class TestBuildDockerCommand:
         with patch("nanogridbot.config.get_config", return_value=mock_config), patch(
             "nanogridbot.config._config", mock_config
         ):
-            cmd = _build_docker_command(mounts, input_data, 300)
+            cmd = build_docker_command(mounts, input_data, 300)
 
         assert cmd[-1] == "custom-image:v2"
 

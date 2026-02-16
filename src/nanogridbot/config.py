@@ -68,6 +68,9 @@ class Config(BaseSettings):
     claude_model: str = "claude-sonnet-4-20250514"
     claude_max_tokens: int = 4096
 
+    # CLI settings
+    cli_default_group: str = "cli"
+
     # Container settings
     container_timeout: int = 300
     container_max_output_size: int = 100000

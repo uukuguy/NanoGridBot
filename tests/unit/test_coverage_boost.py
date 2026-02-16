@@ -150,7 +150,7 @@ class TestContainerRunnerExtended:
                 return_value=[],
             ):
                 with patch(
-                    "nanogridbot.core.container_runner._build_docker_command",
+                    "nanogridbot.core.container_runner.build_docker_command",
                     return_value=["docker", "run"],
                 ):
                     with patch(
@@ -182,7 +182,7 @@ class TestContainerRunnerExtended:
                 return_value=[],
             ):
                 with patch(
-                    "nanogridbot.core.container_runner._build_docker_command",
+                    "nanogridbot.core.container_runner.build_docker_command",
                     return_value=["docker", "run"],
                 ):
                     with patch(

@@ -5,9 +5,77 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from loguru import logger
+from pydantic import BaseModel
+
+
+# ============================================================================
+# Response Models
+# ============================================================================
+
+
+class GroupResponse(BaseModel):
+    """Response model for a registered group."""
+
+    jid: str
+    name: str
+    folder: str
+    active: bool
+    trigger_pattern: str | None
+    requires_trigger: bool
+
+
+class TaskResponse(BaseModel):
+    """Response model for a scheduled task."""
+
+    id: int | None
+    group_folder: str
+    prompt: str
+    schedule_type: str
+    schedule_value: str
+    status: str
+    next_run: str | None
+    context_mode: str
+
+
+class MessageResponse(BaseModel):
+    """Response model for a chat message."""
+
+    id: str
+    chat_jid: str
+    sender: str
+    sender_name: str | None
+    content: str
+    timestamp: str | None
+    is_from_me: bool
+
+
+class HealthResponse(BaseModel):
+    """Response model for health check."""
+
+    status: str
+    timestamp: str
+    version: str
+
+
+class ChannelStatus(BaseModel):
+    """Response model for a single channel's connection status."""
+
+    name: str
+    connected: bool
+
+
+class MetricsResponse(BaseModel):
+    """Response model for system metrics."""
+
+    active_containers: int
+    registered_groups: int
+    active_tasks: int
+    connected_channels: int
+    total_channels: int
+    channels: list[ChannelStatus]
 
 
 class WebState:
@@ -34,6 +102,12 @@ app = FastAPI(
     description="Web monitoring panel for NanoGridBot",
     version="0.1.0",
     lifespan=lifespan,
+    openapi_tags=[
+        {"name": "groups", "description": "Registered group management"},
+        {"name": "tasks", "description": "Scheduled task management"},
+        {"name": "messages", "description": "Chat message retrieval"},
+        {"name": "health", "description": "Health checks and system metrics"},
+    ],
 )
 
 
@@ -343,7 +417,13 @@ async def root() -> HTMLResponse:
 # ============================================================================
 
 
-@app.get("/api/groups")
+@app.get(
+    "/api/groups",
+    response_model=list[GroupResponse],
+    tags=["groups"],
+    summary="List registered groups",
+    description="Returns all registered groups with their current active status.",
+)
 async def get_groups():
     """Get list of registered groups."""
     if not web_state.orchestrator:
@@ -371,7 +451,13 @@ async def get_groups():
     ]
 
 
-@app.get("/api/tasks")
+@app.get(
+    "/api/tasks",
+    response_model=list[TaskResponse],
+    tags=["tasks"],
+    summary="List scheduled tasks",
+    description="Returns all active scheduled tasks with their configuration and next run time.",
+)
 async def get_tasks():
     """Get list of scheduled tasks."""
     if not web_state.db:
@@ -397,8 +483,17 @@ async def get_tasks():
         return []
 
 
-@app.get("/api/messages")
-async def get_messages(limit: int = 50, chat_jid: str | None = None):
+@app.get(
+    "/api/messages",
+    response_model=list[MessageResponse],
+    tags=["messages"],
+    summary="List recent messages",
+    description="Returns recent chat messages, optionally filtered by chat JID.",
+)
+async def get_messages(
+    limit: int = Query(default=50, description="Maximum number of messages to return"),
+    chat_jid: str | None = Query(default=None, description="Filter messages by chat JID"),
+):
     """Get recent messages."""
     if not web_state.db:
         return []
@@ -431,7 +526,13 @@ async def get_messages(limit: int = 50, chat_jid: str | None = None):
 # ============================================================================
 
 
-@app.get("/api/health")
+@app.get(
+    "/api/health",
+    response_model=HealthResponse,
+    tags=["health"],
+    summary="Health check",
+    description="Returns the current health status, timestamp, and version of the service.",
+)
 async def health_check():
     """Health check endpoint."""
     return {
@@ -441,7 +542,13 @@ async def health_check():
     }
 
 
-@app.get("/api/health/metrics")
+@app.get(
+    "/api/health/metrics",
+    response_model=MetricsResponse,
+    tags=["health"],
+    summary="System metrics",
+    description="Returns system metrics including container, group, task, and channel counts.",
+)
 async def get_metrics():
     """Get system metrics."""
     orchestrator = web_state.orchestrator

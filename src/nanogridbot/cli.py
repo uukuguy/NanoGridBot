@@ -1,10 +1,9 @@
 """Command-line interface for NanoGridBot.
 
-Supports four modes:
+Supports three modes:
   serve  - Start the full orchestrator + web dashboard (default)
-  shell  - Interactive REPL for chatting with the LLM
-  chat   - Single-shot message, print response, exit
-  exec   - Run a prompt against a registered group
+  shell  - Interactive multi-turn conversation via container
+  run    - Non-interactive single-shot execution via container
 """
 
 import argparse
@@ -18,9 +17,10 @@ from loguru import logger
 from nanogridbot import setup_logger
 from nanogridbot.channels import ChannelRegistry
 from nanogridbot.config import Config, get_config
+from nanogridbot.core.container_runner import run_container_agent
+from nanogridbot.core.container_session import ContainerSession
 from nanogridbot.core.orchestrator import Orchestrator
 from nanogridbot.database import Database
-from nanogridbot.llm import LLMManager, LLMMessage
 from nanogridbot.web.app import create_app
 
 
@@ -74,11 +74,6 @@ async def start_web_server(
     await server.serve()
 
 
-def _build_llm_manager(config: Config) -> LLMManager:
-    """Build an LLMManager from the current config."""
-    return LLMManager.from_config(config)
-
-
 # ---------------------------------------------------------------------------
 # serve mode
 # ---------------------------------------------------------------------------
@@ -129,218 +124,139 @@ async def cmd_serve(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
-# shell mode  (interactive REPL)
+# shell mode  (interactive, container-backed)
 # ---------------------------------------------------------------------------
+
+
+def _read_input() -> str | None:
+    """Read a line from stdin (blocking). Returns None on EOF."""
+    try:
+        return input("\n> ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+
+async def _print_output(session: ContainerSession) -> None:
+    """Background task: print container output as it arrives."""
+    try:
+        async for text in session.receive():
+            print(text)
+    except asyncio.CancelledError:
+        pass
+
+
+def _print_shell_help() -> None:
+    """Print available shell commands."""
+    print(
+        "Commands:\n"
+        "  /quit     Exit the shell\n"
+        "  /status   Show container status\n"
+        "  /attach   Attach to container shell\n"
+        "  /clear    Clear local display\n"
+        "  /help     Show this help\n"
+        "\n"
+        "Any other input (including unrecognized /commands)\n"
+        "is sent directly to the container."
+    )
+
+
+def _print_status(session: ContainerSession) -> None:
+    """Print session status."""
+    print(
+        f"  container: {session.container_name}\n"
+        f"  group:     {session.group_folder}\n"
+        f"  session:   {session.session_id or '(none)'}\n"
+        f"  alive:     {session.is_alive}"
+    )
 
 
 async def cmd_shell(args: argparse.Namespace) -> None:
-    """Interactive REPL for chatting with the LLM."""
-    config = get_config()
-    setup_logger("WARNING")  # quiet logs in interactive mode
-
-    llm = _build_llm_manager(config)
-    history: list[LLMMessage] = []
-
-    system_prompt = args.system or f"You are {config.assistant_name}, a helpful AI assistant."
-    history.append(LLMMessage(role="system", content=system_prompt))
-
-    model_name = args.model or config.llm_model
-    print(f"NanoGridBot shell  (model: {model_name}, Ctrl+D to quit)")
-    print("-" * 60)
-
-    while True:
-        try:
-            user_input = input("\n> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nBye!")
-            break
-
-        if not user_input:
-            continue
-
-        if user_input in ("/quit", "/exit", "/q"):
-            print("Bye!")
-            break
-        if user_input == "/clear":
-            history = [history[0]]  # keep system prompt
-            print("(conversation cleared)")
-            continue
-        if user_input == "/history":
-            for i, msg in enumerate(history):
-                tag = msg.role.upper()
-                preview = msg.content[:80].replace("\n", " ")
-                print(f"  [{i}] {tag}: {preview}...")
-            continue
-
-        history.append(LLMMessage(role="user", content=user_input))
-
-        try:
-            if args.stream:
-                print()
-                collected: list[str] = []
-                provider = llm.get_provider()
-                async for chunk in provider.stream(
-                    history,
-                    max_tokens=args.max_tokens or config.llm_max_tokens,
-                    temperature=args.temperature or config.llm_temperature,
-                ):
-                    print(chunk, end="", flush=True)
-                    collected.append(chunk)
-                print()
-                assistant_text = "".join(collected)
-            else:
-                response = await llm.complete(
-                    history,
-                    max_tokens=args.max_tokens or config.llm_max_tokens,
-                    temperature=args.temperature or config.llm_temperature,
-                )
-                assistant_text = response.content
-                print(f"\n{assistant_text}")
-
-            history.append(LLMMessage(role="assistant", content=assistant_text))
-
-        except Exception as e:
-            print(f"\n[error] {e}")
-            history.pop()  # remove failed user message
-
-
-# ---------------------------------------------------------------------------
-# chat mode  (single-shot)
-# ---------------------------------------------------------------------------
-
-
-async def cmd_chat(args: argparse.Namespace) -> None:
-    """Send a single message, print the response, and exit."""
+    """Interactive multi-turn conversation via container."""
     config = get_config()
     setup_logger("WARNING")
 
-    llm = _build_llm_manager(config)
+    group = args.group or config.cli_default_group
 
-    messages: list[LLMMessage] = []
-    system_prompt = args.system or f"You are {config.assistant_name}, a helpful AI assistant."
-    messages.append(LLMMessage(role="system", content=system_prompt))
+    if args.attach:
+        # Direct attach mode — just exec into an existing container
+        session = ContainerSession(group_folder=group)
+        await session.attach()
+        return
 
-    if args.message:
-        user_text = args.message
-    else:
-        user_text = sys.stdin.read().strip()
-        if not user_text:
-            print("Error: no message provided. Use -m or pipe via stdin.", file=sys.stderr)
-            sys.exit(1)
+    session = ContainerSession(group_folder=group, session_id=args.resume)
 
-    messages.append(LLMMessage(role="user", content=user_text))
+    print(f"NanoGridBot shell  (group: {group}, /help for commands)")
+    print("-" * 60)
+
+    await session.start()
+    output_task = asyncio.create_task(_print_output(session))
 
     try:
-        if args.stream:
-            provider = llm.get_provider()
-            async for chunk in provider.stream(
-                messages,
-                max_tokens=args.max_tokens or config.llm_max_tokens,
-                temperature=args.temperature or config.llm_temperature,
-            ):
-                print(chunk, end="", flush=True)
-            print()
-        else:
-            response = await llm.complete(
-                messages,
-                max_tokens=args.max_tokens or config.llm_max_tokens,
-                temperature=args.temperature or config.llm_temperature,
-            )
-            print(response.content)
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        while session.is_alive:
+            user_input = await asyncio.get_event_loop().run_in_executor(None, _read_input)
+            if user_input is None:
+                break
+
+            if user_input == "/quit":
+                break
+            elif user_input == "/attach":
+                await session.attach()
+            elif user_input == "/status":
+                _print_status(session)
+            elif user_input == "/clear":
+                print("(conversation continues in container, local display cleared)")
+            elif user_input == "/help":
+                _print_shell_help()
+            elif user_input:
+                # Everything else (including unrecognized /xxx) goes to container
+                await session.send(user_input)
+    finally:
+        output_task.cancel()
+        try:
+            await output_task
+        except asyncio.CancelledError:
+            pass
+        await session.close()
+        print("\nSession ended.")
 
 
 # ---------------------------------------------------------------------------
-# run mode  (run prompt against a group)
+# run mode  (non-interactive, single-shot)
 # ---------------------------------------------------------------------------
 
 
 async def cmd_run(args: argparse.Namespace) -> None:
-    """Run a prompt against a registered group and print the result."""
+    """Non-interactive single-shot execution via container."""
     config = get_config()
     setup_logger(config.log_level if args.verbose else "WARNING")
 
-    db = Database(config.db_path)
-    await db.initialize()
+    group = args.group or config.cli_default_group
 
-    try:
-        llm = _build_llm_manager(config)
+    prompt = args.prompt
+    if not prompt:
+        prompt = sys.stdin.read().strip()
+    if not prompt:
+        print("Error: no prompt. Use -p or pipe via stdin.", file=sys.stderr)
+        sys.exit(1)
 
-        from nanogridbot.database.groups import GroupRepository
+    result = await run_container_agent(
+        group_folder=group,
+        prompt=prompt,
+        session_id=None,
+        chat_jid=f"cli:{group}",
+        timeout=args.timeout,
+    )
 
-        group_repo = GroupRepository(db)
-        groups = await group_repo.get_groups_by_folder(args.group)
+    if result.status == "error":
+        print(f"Error: {result.error}", file=sys.stderr)
+        sys.exit(1)
 
-        if not groups:
-            print(f"Error: group '{args.group}' not found.", file=sys.stderr)
-            sys.exit(1)
-
-        group = groups[0]
-
-        messages: list[LLMMessage] = []
-        system_prompt = (
-            f"You are {config.assistant_name}, an AI assistant for the group '{group.name}'. "
-            f"Group folder: {group.folder}."
-        )
-        messages.append(LLMMessage(role="system", content=system_prompt))
-
-        if args.context > 0:
-            from nanogridbot.database.messages import MessageRepository
-
-            msg_repo = MessageRepository(db)
-            recent = await msg_repo.get_recent_messages(group.jid, limit=args.context)
-            for msg in recent:
-                role = "assistant" if msg.is_from_me else "user"
-                name_prefix = f"[{msg.sender_name}] " if msg.sender_name else ""
-                messages.append(LLMMessage(role=role, content=f"{name_prefix}{msg.content}"))
-
-        prompt = args.prompt
-        if not prompt:
-            prompt = sys.stdin.read().strip()
-        if not prompt:
-            print("Error: no prompt provided. Use -p or pipe via stdin.", file=sys.stderr)
-            sys.exit(1)
-
-        messages.append(LLMMessage(role="user", content=prompt))
-
-        response = await llm.complete(
-            messages,
-            max_tokens=args.max_tokens or config.llm_max_tokens,
-            temperature=args.temperature or config.llm_temperature,
-        )
-        print(response.content)
-
-        if args.send:
-            channels = await create_channels(config, db)
-            if channels:
-                from nanogridbot.core.router import MessageRouter
-
-                router = MessageRouter(config, db, channels)
-                await router.send_response(group.jid, response.content)
-                logger.info(f"Response sent to group {group.jid}")
-            else:
-                print("Warning: no channels configured, cannot send.", file=sys.stderr)
-
-    finally:
-        await db.close()
+    print(result.result or "")
 
 
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
-
-
-def _add_common_llm_args(parser: argparse.ArgumentParser) -> None:
-    """Add common LLM-related arguments to a subparser."""
-    parser.add_argument("--model", type=str, default=None, help="Override LLM model name")
-    parser.add_argument("--max-tokens", type=int, default=None, help="Max tokens for LLM response")
-    parser.add_argument(
-        "--temperature", type=float, default=None, help="Sampling temperature (0.0-2.0)"
-    )
-    parser.add_argument("--system", type=str, default=None, help="Custom system prompt")
-    parser.add_argument("--stream", action="store_true", help="Stream the response token by token")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -351,12 +267,12 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  nanogridbot serve                          Start orchestrator + web dashboard\n"
-            "  nanogridbot shell                          Interactive chat REPL\n"
-            "  nanogridbot shell --stream                 Interactive chat with streaming\n"
-            '  nanogridbot chat -m "Hello!"               Single-shot message\n'
-            "  echo 'Summarize this' | nanogridbot chat   Pipe input\n"
-            '  nanogridbot run -g mygroup -p "Status report"\n'
+            "  nanogridbot serve                              Start orchestrator + web dashboard\n"
+            "  nanogridbot shell                              Interactive container session\n"
+            "  nanogridbot shell -g myproject                 Shell for a specific group\n"
+            '  nanogridbot run -p "Explain JID format"        Single-shot query\n'
+            '  git diff | nanogridbot run -p "review this"    Pipe input\n'
+            "  nanogridbot run -g deploy -p \"check config\" --timeout 60\n"
         ),
     )
 
@@ -366,35 +282,46 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # --- serve ---
-    serve_parser = subparsers.add_parser("serve", help="Start the full orchestrator + web dashboard")
+    serve_parser = subparsers.add_parser(
+        "serve", help="Start the full orchestrator + web dashboard"
+    )
     serve_parser.add_argument("--host", type=str, default=None, help="Web server host")
     serve_parser.add_argument("--port", type=int, default=None, help="Web server port")
 
     # --- shell ---
-    shell_parser = subparsers.add_parser("shell", help="Interactive REPL for chatting with the LLM")
-    _add_common_llm_args(shell_parser)
-
-    # --- chat ---
-    chat_parser = subparsers.add_parser("chat", help="Send a single message and print the response")
-    chat_parser.add_argument(
-        "-m", "--message", type=str, default=None, help="Message to send (or pipe via stdin)"
+    shell_parser = subparsers.add_parser(
+        "shell", help="Interactive multi-turn conversation via container"
     )
-    _add_common_llm_args(chat_parser)
+    shell_parser.add_argument(
+        "-g", "--group", type=str, default=None, help="Group folder (default: cli)"
+    )
+    shell_parser.add_argument(
+        "--resume", type=str, default=None, help="Resume a previous session by ID"
+    )
+    shell_parser.add_argument(
+        "--attach", action="store_true", help="Attach directly to container shell"
+    )
 
     # --- run ---
-    run_parser = subparsers.add_parser("run", help="Run a prompt against a registered group")
-    run_parser.add_argument("-g", "--group", type=str, required=True, help="Group folder name")
-    run_parser.add_argument(
-        "-p", "--prompt", type=str, default=None, help="Prompt to run (or pipe via stdin)"
+    run_parser = subparsers.add_parser(
+        "run", help="Non-interactive single-shot execution via container"
     )
     run_parser.add_argument(
-        "--context", type=int, default=0, help="Number of recent messages to include as context"
+        "-p", "--prompt", type=str, default=None, help="Prompt text (or pipe via stdin)"
     )
     run_parser.add_argument(
-        "--send", action="store_true", help="Send the LLM response back to the group channel"
+        "-g", "--group", type=str, default=None, help="Group folder (default: cli)"
+    )
+    run_parser.add_argument(
+        "--context", type=int, default=0, help="Number of recent messages as context"
+    )
+    run_parser.add_argument(
+        "--send", action="store_true", help="Send result back to the group channel"
+    )
+    run_parser.add_argument(
+        "--timeout", type=int, default=None, help="Container timeout in seconds"
     )
     run_parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose logging")
-    _add_common_llm_args(run_parser)
 
     return parser
 
@@ -419,7 +346,6 @@ def main() -> int:
     dispatch = {
         "serve": cmd_serve,
         "shell": cmd_shell,
-        "chat": cmd_chat,
         "run": cmd_run,
     }
 
