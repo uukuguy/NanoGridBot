@@ -2,25 +2,29 @@
 
 ## 1. 项目概述
 
-**NanoGridBot** 是智能体开发控制台与轻量级运行时，专为开发者打造，用于构建、测试和部署跨平台的 AI 智能体。
+**NanoGridBot** 是基于 Claude Agent SDK 驱动的智能体开发控制台，提供最强大的智能体运行时，具备深度 Skills、MCP 和 CLI 集成验证能力。
 
-源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，但已演化为完整的智能体开发平台——不仅支持 Claude Code，还支持多种 LLM（OpenAI、Anthropic API、自定义）。
+源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，已演化为完整的智能体开发平台——不仅支持 Claude Code，还支持多种 LLM（OpenAI、Anthropic API、自定义）。
 
 ### 1.1 核心特性
 
+- **Claude Agent SDK 驱动**: 基于 Claude Code，最强大的智能体运行时
+- **Skills & MCP 集成验证**: 在隔离容器中验证 Skills、MCP 服务器和 CLI 工具
 - **多 LLM 支持**: Claude、OpenAI、Anthropic API、自定义 LLM
-- **容器隔离**: 使用 Docker 实现 OS 级别的安全隔离
+- **交互式调试**: Shell 模式实时调试，支持会话恢复
+- **容器隔离**: Docker 实现 OS 级别的安全隔离
 - **多组隔离**: 每个群组拥有独立的文件系统、会话和容器沙箱
 - **异步架构**: 基于 asyncio 的高性能异步处理
 - **类型安全**: 使用 Pydantic 进行数据验证和类型检查
-- **可扩展**: 支持多通道、插件系统、Web 监控、MCP 集成
+- **可扩展**: 支持多通道、插件系统、Web 监控
 
 ### 1.2 技术栈选择
 
 | 组件 | TypeScript 原版 | Python 移植版 | 说明 |
 |------|----------------|--------------|------|
+| **智能体运行时** | Claude Code | Claude Agent SDK | 最强大的智能体运行时 |
 | **运行时** | Node.js 20+ | Python 3.12+ | 使用最新 Python 特性 |
-| **WhatsApp 客户端** | @whiskeysockets/baileys | yowsup / whatsapp-web.py | 需要评估可用性 |
+| **WhatsApp 客户端** | @whiskeysockets/baileys | pywa | WhatsApp Cloud API |
 | **数据库** | better-sqlite3 | aiosqlite | 异步 SQLite |
 | **日志** | pino | loguru | 结构化日志 |
 | **类型验证** | zod | pydantic | 运行时类型检查 |
@@ -29,6 +33,37 @@
 | **异步框架** | N/A | asyncio + aiofiles | 原生异步支持 |
 | **HTTP 框架** | N/A | FastAPI | Web 监控面板 |
 | **消息队列** | 文件系统 | 文件系统 + Redis (可选) | 支持分布式 |
+
+---
+
+### 1.3 架构优势
+
+NanoGridBot 基于 Claude Agent SDK 构建，具备以下核心优势：
+
+- **Claude Agent SDK 原生能力**
+  - Agent Teams：多智能体协作
+  - Session Resume：会话状态恢复
+  - Transcript Archiving：对话历史存档
+
+- **MCP 深度集成**
+  - `mcpServers` 配置支持
+  - 零门槛 MCP 服务器验证
+
+- **Skills 零门槛验证**
+  - 在隔离容器中测试自定义 Skills
+  - 快速验证 Skills 兼容性
+
+- **文件系统隔离**
+  - 群组级别文件系统隔离
+  - 全局只读目录共享
+
+- **对话持久化**
+  - PreCompact Hook 支持
+  - 会话状态自动恢复
+
+- **IPC 消息流**
+  - 文件系统-based IPC
+  - 支持实时消息交互
 
 ---
 
@@ -1027,7 +1062,22 @@ class Database:
 
 ## 4. 扩展功能设计
 
-### 4.1 多通道支持
+### 4.1 多通道测试/模拟
+
+> **注意**: 多通道支持主要用于实现真实场景的智能体行为测试和模拟，而非首要构建目的。
+
+支持 8 个消息平台，便于在不同场景下测试智能体行为：
+
+| 平台 | 用途 |
+|------|------|
+| WhatsApp | 主流通讯测试 |
+| Telegram | Bot API 测试 |
+| Slack | 企业协作测试 |
+| Discord | 社区平台测试 |
+| QQ | 国内社交测试 |
+| 飞书 | 企业协作测试 |
+| 企业微信 | 企业微信测试 |
+| 钉钉 | 企业通讯测试 |
 
 **Telegram 通道实现** (`channels/telegram.py`):
 
@@ -2001,20 +2051,21 @@ Python 版本使用相同的 SQLite 数据库模式，可以直接读取 TypeScr
 
 ## 13. 总结
 
-NanoGridBot 是 NanoClaw 的完整 Python 移植，具有以下优势：
+NanoGridBot 是基于 Claude Agent SDK 的智能体开发控制台，具有以下核心优势：
 
-1. **功能对等**: 1:1 复制所有核心功能
-2. **Python 生态**: 利用丰富的 Python 库
-3. **异步架构**: 基于 asyncio 的高性能设计
-4. **可扩展性**: 插件系统、多通道支持、Web 监控
-5. **类型安全**: Pydantic 数据验证
-6. **易于部署**: Docker 容器化
-7. **向后兼容**: 可与 TypeScript 版本共存
+1. **Claude Agent SDK 驱动**: 最强大的智能体运行时，原生支持 Skills、MCP、CLI 验证
+2. **Skills & MCP 验证**: 在隔离容器中零门槛验证 Skills 和 MCP 服务器
+3. **Python 生态**: 利用丰富的 Python 库
+4. **异步架构**: 基于 asyncio 的高性能设计
+5. **可扩展性**: 插件系统、多通道测试/模拟、Web 监控
+6. **类型安全**: Pydantic 数据验证
+7. **易于部署**: Docker 容器化
+8. **向后兼容**: 可与 TypeScript 版本共存
 
 **下一步行动**:
 1. 实现核心模块（orchestrator, database, container_runner）
-2. 实现 WhatsApp 通道（评估可用库）
-3. 编写单元测试
+2. 实现 Skills/MCP 验证框架
+3. 完善多通道测试/模拟功能
 
 ---
 

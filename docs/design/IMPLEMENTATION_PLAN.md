@@ -2,7 +2,15 @@
 
 ## 项目概述
 
-本文档提供 NanoGridBot（NanoClaw 的 Python 移植版）的详细实施方案。
+NanoGridBot 是基于 Claude Agent SDK 驱动的智能体开发控制台，提供最强大的智能体运行时，具备深度 Skills、MCP 和 CLI 集成验证能力。
+
+源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，已演化为完整的智能体开发平台。
+
+## 核心定位
+
+- **Claude Agent SDK 驱动**: 基于 Claude Code，最强大的智能体运行时
+- **Skills & MCP 验证**: 在隔离容器中零门槛验证 Skills 和 MCP 服务器
+- **多通道测试/模拟**: 8 个消息平台用于实现真实场景的智能体行为测试
 
 ## 开发阶段规划（14 周）
 
