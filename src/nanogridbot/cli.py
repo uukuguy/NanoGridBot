@@ -239,12 +239,24 @@ async def cmd_run(args: argparse.Namespace) -> None:
         print("Error: no prompt. Use -p or pipe via stdin.", file=sys.stderr)
         sys.exit(1)
 
+    # Parse environment variables from --env arguments
+    env: dict[str, str] = {}
+    env_args = getattr(args, "env", None)
+    if env_args:
+        for env_pair in env_args:
+            if "=" not in env_pair:
+                print(f"Error: invalid env format '{env_pair}'. Use KEY=VALUE", file=sys.stderr)
+                sys.exit(1)
+            key, value = env_pair.split("=", 1)
+            env[key] = value
+
     result = await run_container_agent(
         group_folder=group,
         prompt=prompt,
         session_id=None,
         chat_jid=f"cli:{group}",
         timeout=args.timeout,
+        env=env if env else None,
     )
 
     if result.status == "error":
@@ -252,6 +264,136 @@ async def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     print(result.result or "")
+
+
+# ---------------------------------------------------------------------------
+# logs mode (view logs)
+# ---------------------------------------------------------------------------
+
+
+async def cmd_logs(args: argparse.Namespace) -> None:
+    """View and follow logs."""
+    config = get_config()
+    setup_logger("INFO")
+
+    log_file = config.store_dir / "logs" / "nanogridbot.log"
+
+    if not log_file.exists():
+        print(f"Log file not found: {log_file}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.follow:
+        # Follow mode
+        try:
+            with open(log_file, "r") as f:
+                # Seek to end
+                f.seek(0, 2)
+                while True:
+                    line = f.readline()
+                    if not line:
+                        import time
+
+                        time.sleep(0.5)
+                        continue
+                    print(line, end="")
+        except KeyboardInterrupt:
+            pass
+    else:
+        # Show last N lines - use subprocess for safety
+        import subprocess
+
+        lines = args.lines
+        try:
+            result = subprocess.run(
+                ["tail", "-n", str(lines), str(log_file)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            print(result.stdout)
+        except subprocess.CalledProcessError as e:
+            print(f"Error reading log: {e}", file=sys.stderr)
+            sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# session mode (session management)
+# ---------------------------------------------------------------------------
+
+
+async def cmd_session(args: argparse.Namespace) -> None:
+    """Manage interactive sessions."""
+    config = get_config()
+    setup_logger("WARNING")
+
+    sessions_dir = config.data_dir / "sessions"
+
+    if not sessions_dir.exists():
+        print("No sessions found.", file=sys.stderr)
+        return
+
+    if args.action == "ls":
+        # List sessions
+        sessions = list(sessions_dir.iterdir())
+        if not sessions:
+            print("No active sessions.")
+            return
+
+        print(f"{'Session ID':<40} {'Created':<25} {'Group':<20}")
+        print("-" * 85)
+        for session_dir in sorted(sessions):
+            if session_dir.is_dir():
+                import json
+
+                meta_file = session_dir / "meta.json"
+                if meta_file.exists():
+                    with open(meta_file) as f:
+                        meta = json.load(f)
+                    print(
+                        f"{session_dir.name:<40} "
+                        f"{meta.get('created', 'unknown'):<25} "
+                        f"{meta.get('group', 'unknown'):<20}"
+                    )
+                else:
+                    print(f"{session_dir.name:<40} {'(no meta)':<25} {'unknown':<20}")
+
+    elif args.action == "kill":
+        # Kill a session
+        if not args.session_id:
+            print("Error: session ID required", file=sys.stderr)
+            sys.exit(1)
+
+        session_dir = sessions_dir / args.session_id
+        if not session_dir.exists():
+            print(f"Session not found: {args.session_id}", file=sys.stderr)
+            sys.exit(1)
+
+        # Mark session as terminated
+        import json
+
+        meta_file = session_dir / "meta.json"
+        if meta_file.exists():
+            with open(meta_file) as f:
+                meta = json.load(f)
+            meta["terminated"] = True
+            with open(meta_file, "w") as f:
+                json.dump(meta, f)
+
+        print(f"Session {args.session_id} terminated.")
+
+    elif args.action == "resume":
+        # Resume a session (launch shell with session ID)
+        if not args.session_id:
+            print("Error: session ID required", file=sys.stderr)
+            sys.exit(1)
+
+        session_dir = sessions_dir / args.session_id
+        if not session_dir.exists():
+            print(f"Session not found: {args.session_id}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"Resuming session {args.session_id}...")
+        print("Use 'nanogridbot shell --resume {id}' to continue this session.")
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +463,26 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--timeout", type=int, default=None, help="Container timeout in seconds"
     )
+    run_parser.add_argument(
+        "-e", "--env", action="append", default=[], help="Environment variables for container (KEY=VALUE)"
+    )
     run_parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose logging")
+
+    # --- logs ---
+    logs_parser = subparsers.add_parser("logs", help="View and follow logs")
+    logs_parser.add_argument(
+        "-n", "--lines", type=int, default=50, help="Number of lines to show (default: 50)"
+    )
+    logs_parser.add_argument("-f", "--follow", action="store_true", help="Follow log output")
+
+    # --- session ---
+    session_parser = subparsers.add_parser("session", help="Manage interactive sessions")
+    session_parser.add_argument(
+        "action",
+        choices=["ls", "kill", "resume"],
+        help="Session action: ls (list), kill (terminate), resume (show info)",
+    )
+    session_parser.add_argument("session_id", nargs="?", help="Session ID for kill/resume")
 
     return parser
 
@@ -347,6 +508,8 @@ def main() -> int:
         "serve": cmd_serve,
         "shell": cmd_shell,
         "run": cmd_run,
+        "logs": cmd_logs,
+        "session": cmd_session,
     }
 
     handler = dispatch.get(command)

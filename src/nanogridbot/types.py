@@ -61,6 +61,7 @@ class ContainerConfig(BaseModel):
     additional_mounts: list[dict[str, Any]] = Field(default_factory=list)
     timeout: int | None = None
     max_output_size: int | None = None
+    env: dict[str, str] = Field(default_factory=dict, description="Environment variables for container")
 
 
 class ScheduleType(str, Enum):

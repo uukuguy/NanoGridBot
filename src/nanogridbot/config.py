@@ -177,3 +177,108 @@ def reload_config() -> Config:
     global _config
     _config = Config()
     return _config
+
+
+# ---------------------------------------------------------------------------
+# Configuration Hot Reload
+# ---------------------------------------------------------------------------
+
+import threading
+from typing import Callable
+
+
+class ConfigWatcher:
+    """Watch configuration files for changes and trigger reloads."""
+
+    def __init__(self, config: Config):
+        self.config = config
+        self._observer = None
+        self._callbacks: list[Callable[[], None]] = []
+        self._running = False
+
+    def start(self, paths: list[Path] | None = None) -> None:
+        """Start watching configuration files.
+
+        Args:
+            paths: Additional paths to watch. If None, watches .env and groups/*/config.json
+        """
+        try:
+            from watchdog.observers import Observer
+        except ImportError:
+            import logging
+
+            logging.getLogger(__name__).warning("watchdog not installed, config hot-reload disabled")
+            return
+
+        if self._running:
+            return
+
+        watch_paths = []
+
+        # Watch .env file
+        env_file = Path(".env")
+        if env_file.exists():
+            watch_paths.append(env_file.parent)
+
+        # Watch group config files
+        if self.config.groups_dir.exists():
+            for group_dir in self.config.groups_dir.iterdir():
+                if group_dir.is_dir():
+                    config_file = group_dir / "config.json"
+                    if config_file.exists():
+                        watch_paths.append(config_file.parent)
+
+        # Add custom paths
+        if paths:
+            watch_paths.extend(paths)
+
+        if not watch_paths:
+            return
+
+        self._observer = Observer()
+        for watch_path in set(watch_paths):
+            self._observer.schedule(self._on_config_change, str(watch_path), recursive=True)
+
+        self._observer.start()
+        self._running = True
+
+        import logging
+
+        logging.getLogger(__name__).info(f"Config watcher started, watching {len(watch_paths)} paths")
+
+    def stop(self) -> None:
+        """Stop watching configuration files."""
+        if self._observer:
+            self._observer.stop()
+            self._observer.join()
+            self._running = False
+
+    def _on_config_change(self, event):
+        """Handle configuration file change event."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Skip directories and temporary files
+        if event.is_directory or event.src_path.endswith(".tmp"):
+            return
+
+        logger.info(f"Configuration change detected: {event.src_path}")
+
+        # Reload config
+        reload_config()
+
+        # Notify callbacks
+        for callback in self._callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"Error in config change callback: {e}")
+
+    def on_change(self, callback: Callable[[], None]) -> None:
+        """Register a callback to be called when configuration changes.
+
+        Args:
+            callback: Function to call on configuration change
+        """
+        self._callbacks.append(callback)

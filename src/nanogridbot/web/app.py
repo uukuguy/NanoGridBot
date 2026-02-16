@@ -93,6 +93,16 @@ web_state = WebState()
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("NanoGridBot Web Dashboard starting...")
+
+    # Initialize metrics database
+    try:
+        from nanogridbot.database import metrics
+
+        await metrics.init_metrics_db()
+        logger.info("Metrics database initialized")
+    except Exception as e:
+        logger.warning(f"Failed to initialize metrics database: {e}")
+
     yield
     logger.info("NanoGridBot Web Dashboard shutting down...")
 
@@ -107,6 +117,7 @@ app = FastAPI(
         {"name": "tasks", "description": "Scheduled task management"},
         {"name": "messages", "description": "Chat message retrieval"},
         {"name": "health", "description": "Health checks and system metrics"},
+        {"name": "metrics", "description": "Extended metrics and analytics"},
     ],
 )
 
@@ -603,6 +614,53 @@ async def get_metrics():
         "total_channels": len(channels),
         "channels": channels,
     }
+
+
+# ============================================================================
+# Extended Metrics API
+# ============================================================================
+
+
+@app.get(
+    "/api/metrics/containers",
+    tags=["metrics"],
+    summary="Container execution metrics",
+    description="Returns detailed container execution statistics including token usage and duration.",
+)
+async def get_container_metrics(
+    group: str | None = Query(None, description="Filter by group folder"),
+    days: int = Query(7, description="Number of days to look back", ge=1, le=90),
+):
+    """Get container execution metrics."""
+    try:
+        from nanogridbot.database import metrics
+
+        stats = await metrics.get_container_stats(group_folder=group, days=days)
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting container metrics: {e}")
+        return {"error": str(e)}
+
+
+@app.get(
+    "/api/metrics/requests",
+    tags=["metrics"],
+    summary="Request metrics",
+    description="Returns request statistics grouped by channel.",
+)
+async def get_request_metrics(
+    channel: str | None = Query(None, description="Filter by channel"),
+    days: int = Query(7, description="Number of days to look back", ge=1, le=90),
+):
+    """Get request statistics."""
+    try:
+        from nanogridbot.database import metrics
+
+        stats = await metrics.get_request_stats(channel=channel, days=days)
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting request metrics: {e}")
+        return {"error": str(e)}
 
 
 # ============================================================================

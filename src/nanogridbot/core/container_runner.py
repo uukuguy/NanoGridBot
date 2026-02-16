@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,6 +24,7 @@ async def run_container_agent(
     is_main: bool = False,
     container_config: ContainerConfig | None = None,
     timeout: int | None = None,
+    env: dict[str, str] | None = None,
 ) -> ContainerOutput:
     """Run Claude Agent in a Docker container.
 
@@ -34,6 +36,7 @@ async def run_container_agent(
         is_main: Whether this is the main group
         container_config: Optional container configuration
         timeout: Optional timeout in seconds
+        env: Optional environment variables for container
 
     Returns:
         ContainerOutput with execution result
@@ -41,6 +44,27 @@ async def run_container_agent(
     from loguru import logger
 
     config = get_config()
+
+    # Merge environment variables from container_config and explicit env parameter
+    merged_env: dict[str, str] = {}
+    if container_config and container_config.env:
+        merged_env.update(container_config.env)
+    if env:
+        merged_env.update(env)
+
+    # Extract channel from chat_jid
+    channel = chat_jid.split(":")[0] if ":" in chat_jid else "unknown"
+
+    # Record container start for metrics
+    metric_id = None
+    start_time = time.time()
+    try:
+        from nanogridbot.database import metrics as metrics_db
+
+        metric_id = await metrics_db.record_container_start(group_folder, channel)
+    except Exception:
+        # Metrics are optional, don't fail if they can't be recorded
+        pass
 
     # Build mounts
     try:
@@ -51,6 +75,12 @@ async def run_container_agent(
         )
     except Exception as e:
         logger.error(f"Mount validation failed: {e}")
+        # Record failure
+        if metric_id:
+            try:
+                await metrics_db.record_container_end(metric_id, "error", error=str(e))
+            except Exception:
+                pass
         return ContainerOutput(status="error", error=str(e))
 
     # Prepare input data
@@ -67,15 +97,36 @@ async def run_container_agent(
         mounts=mounts,
         input_data=input_data,
         timeout=timeout or config.container_timeout,
+        env=merged_env,
     )
 
     logger.debug(f"Starting container for {group_folder}")
 
     try:
         result = await _execute_container(cmd, input_data)
+        # Record container end for metrics
+        duration = time.time() - start_time
+        status = "success" if result.status == "success" else "error"
+        if metric_id:
+            try:
+                await metrics_db.record_container_end(
+                    metric_id,
+                    status=status,
+                    duration_seconds=duration,
+                    error=result.error,
+                )
+            except Exception:
+                pass
         return result
     except Exception as e:
         logger.error(f"Container error: {e}")
+        # Record failure
+        duration = time.time() - start_time
+        if metric_id:
+            try:
+                await metrics_db.record_container_end(metric_id, "error", duration_seconds=duration, error=str(e))
+            except Exception:
+                pass
         return ContainerOutput(status="error", error=str(e))
 
 
@@ -203,6 +254,7 @@ def build_docker_command(
     mounts: list[tuple[str, str, str]],
     input_data: dict[str, Any],
     timeout: int,
+    env: dict[str, str] | None = None,
 ) -> list[str]:
     """Build docker run command.
 
@@ -210,6 +262,7 @@ def build_docker_command(
         mounts: List of (host_path, container_path, mode) tuples
         input_data: Input data to pass to container
         timeout: Timeout in seconds
+        env: Optional environment variables for container
 
     Returns:
         Command as list of strings
@@ -227,6 +280,11 @@ def build_docker_command(
     # Add environment variables
     cmd.extend(["-e", f"NANOGRIDBOT_IS_MAIN={str(input_data.get('isMain', False)).lower()}"])
     cmd.extend(["-e", f"NANOGRIDBOT_GROUP={input_data.get('groupFolder', '')}"])
+
+    # Add custom environment variables
+    if env:
+        for key, value in env.items():
+            cmd.extend(["-e", f"{key}={value}"])
 
     # Set timeout
     cmd.extend(["--stop-timeout", str(timeout)])

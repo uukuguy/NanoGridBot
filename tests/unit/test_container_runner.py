@@ -153,6 +153,34 @@ class TestBuildDockerCommand:
         assert "NANOGRIDBOT_IS_MAIN=true" in cmd
         assert "NANOGRIDBOT_GROUP=mygroup" in cmd
 
+    def test_custom_environment_variables(self):
+        """Test custom environment variables are passed to container."""
+        mounts = []
+        input_data = {"isMain": False, "groupFolder": "test"}
+
+        with patch("nanogridbot.core.container_runner.get_config") as mock_cfg:
+            mock_cfg.return_value = MagicMock(container_image="img:latest")
+            cmd = build_docker_command(
+                mounts, input_data, 300, env={"ANTHROPIC_MODEL": "claude-sonnet-4-20250514", "CUSTOM_VAR": "test"}
+            )
+
+        assert "-e" in cmd
+        assert "ANTHROPIC_MODEL=claude-sonnet-4-20250514" in cmd
+        assert "CUSTOM_VAR=test" in cmd
+
+    def test_no_custom_env_when_none_provided(self):
+        """Test no custom env flags when env is None."""
+        mounts = []
+        input_data = {"isMain": False, "groupFolder": "test"}
+
+        with patch("nanogridbot.core.container_runner.get_config") as mock_cfg:
+            mock_cfg.return_value = MagicMock(container_image="img:latest")
+            cmd = build_docker_command(mounts, input_data, 300, env=None)
+
+        # Should only have default env vars, no custom ones
+        assert "NANOGRIDBOT_IS_MAIN=false" in cmd
+        assert "ANTHROPIC_MODEL" not in " ".join(cmd)
+
     def test_resource_limits(self):
         """Test memory and CPU limits are set."""
         mounts = []

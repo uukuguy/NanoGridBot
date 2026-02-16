@@ -2,9 +2,62 @@
 
 ## Current Status
 
-**Phase**: Phase 文档定位更新 ✅ COMPLETE
+**Phase**: Phase 功能框架增强 ✅ COMPLETE
 **Date**: 2026-02-16
-**Project Status**: PRODUCTION READY 🎉
+**Project Status**: PRODUCTION READY with Enhanced Features 🎉
+
+---
+
+## 2026-02-16 - 功能框架增强完成
+
+### 本次完成的工作
+
+#### Phase 1: 容器环境变量动态配置
+- `types.py`: `ContainerConfig` 添加 `env: dict[str, str]` 字段
+- `container_runner.py`: `run_container_agent()` 和 `build_docker_command()` 支持环境变量注入
+- `cli.py`: `run` 命令添加 `-e/--env` 参数
+
+**使用示例**:
+```bash
+nanogridbot run -p "用 Sonnet 写诗" -e ANTHROPIC_MODEL=claude-sonnet-4-20250514
+nanogridbot run -g mygroup -p "分析代码" -e OPENAI_API_KEY=xxx
+```
+
+#### Phase 2: 运行时配置热重载
+- `config.py`: 新增 `ConfigWatcher` 类
+- 支持监听 `.env` 和 `groups/*/config.json` 变化
+- 使用 watchdog 库实现文件监控
+
+#### Phase 3: CLI 日志/会话增强
+- 新增 `logs` 子命令: `-n` 行数, `-f` 跟踪
+- 新增 `session` 子命令: `ls/kill/resume`
+
+**使用示例**:
+```bash
+nanogridbot logs -n 50           # 查看最近50行日志
+nanogridbot logs -f               # 跟踪日志
+nanogridbot session ls            # 列出活动会话
+nanogridbot session kill <id>     # 终止会话
+```
+
+#### Phase 4: 监控指标增强
+- 新增 `database/metrics.py`: 指标存储模块
+- 新增 Web API 端点:
+  - `GET /api/metrics/containers` - 容器执行统计
+  - `GET /api/metrics/requests` - 请求统计
+
+**指标包含**:
+- 容器执行次数、成功/失败/超时数
+- 平均/最大/最小执行时长
+- Token 消耗统计
+
+### 测试结果
+- **56 个相关测试通过**
+- 代码覆盖率: 31%
+
+### 项目定位总结
+- **核心定位**: 智能体开发控制台 & 轻量级运行时
+- **增强功能**: 环境变量注入、配置热重载、日志会话、监控指标
 
 ---
 
