@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "nanogridbot"
 version = "0.1.0-alpha"
-description = "AI Agent Development Console & Multi-Platform Runtime - Build, test, and deploy AI agents across 8 messaging platforms"
+description = "AI Agent Development Console & Lightweight Agent Runtime - Build, test, and deploy AI agents across 8 messaging platforms"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }

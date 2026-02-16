@@ -1,36 +1,39 @@
 # {🦑} NanoGridBot
 
-> NanoGridBot - AI Agent Development Console & Multi-Platform Runtime. Build, test, and deploy AI agents across 8 messaging platforms with container isolation, multi-LLM support, and interactive debugging tools.
+> NanoGridBot - AI Agent Development Console powered by Claude Agent SDK. Build, test, and verify AI agents with Skills, MCP, and CLI integrations using the most capable agent runtime.
+
+[中文文档](README_zh.md)
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-**NanoGridBot** is a comprehensive agent development platform designed for building, testing, and deploying AI agents across multiple messaging platforms. It provides:
+**NanoGridBot** is a comprehensive agent development platform powered by Claude Agent SDK. It provides the most capable agent runtime with deep Skills, MCP, and CLI integration verification capabilities:
 
-- 🧪 **Interactive Development**: Shell mode for real-time agent debugging
-- ⚡ **Lightweight Runtime**: Fast prototyping and testing without heavy infrastructure
-- 📡 **Multi-Channel Ready**: Deploy across 8 messaging platforms for realistic environment testing
-- 🔌 **Multi-LLM Support**: Claude, OpenAI, Anthropic API, custom providers
+- 🔥 **Claude Agent SDK Powered** - Most capable agent runtime with Claude Code
+- 🛠️ **Skills & MCP Integration** - Verify Skills, MCP servers, and CLI tools in isolated containers
+- 🔌 **Multi-LLM Support** - Claude, OpenAI, Anthropic API, custom providers
+- 📡 **8 IM Channels** - Test in production-like environments (WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk)
+- ⚡ **Interactive Shell** - Real-time debugging with session resume capability
 - 🛠️ **5 CLI Modes**: serve, shell, run, logs, session
 
 ## Why NanoGridBot
 
 | Feature | Traditional Development | NanoGridBot |
 |---------|------------------------|-------------|
-| **Agent Runtime** | Manual configuration needed | Automatic container isolation |
-| **Multi-Channel Deployment** | Separate development per platform | Unified API, 8 platforms auto-adapted |
-| **Debugging Experience** | Logs + print statements | Web real-time monitoring + CLI interaction |
-| **Task Scheduling** | External cron | Built-in scheduler |
-| **Extensibility** | Code modifications | Plugin hot-reloading |
+| **Agent Runtime** | Manual setup | Claude Agent SDK - most powerful capability |
+| **Skills/MCP/CLI** | Hard to test | Integrated verification in isolated containers |
+| **Debugging** | Logs + print | Interactive shell + Web real-time monitoring |
+| **Multi-turn** | Stateless | Session resume + IPC message streaming |
+| **Team Collaboration** | Single agent | Claude Agent SDK Teams support |
 
 ## Use Cases
 
-1. **Interactive Agent Development** - Use `shell` mode for real-time debugging and exploration
-2. **Feature Prototyping & Testing** - Use `run` mode for quick prompt/feature validation
-3. **New Feature Validation** - Test across multiple channels for production-like environments
-4. **Personal AI Assistant** - Deploy with `serve` mode for daily use
-5. **Enterprise Module Debugging** - Debug AI application features in isolated containers
+1. **Skills & MCP Verification** - Verify Skills, MCP servers, and CLI tools in isolated containers
+2. **Interactive Agent Development** - Use `shell` mode for real-time debugging
+3. **Agent Behavior Testing** - Test agent behavior across 8 IM channels
+4. **Feature Prototyping** - Use `run` mode for quick prompt/feature validation
+5. **Personal AI Assistant** - Deploy with `serve` mode for daily use
 6. **Task Automation** - Schedule recurring tasks with built-in scheduler
 
 ## Table of Contents
@@ -145,6 +148,15 @@ nanogridbot session resume <id>   # Show resume info
 | **Database** | SQLite persistence, message cache | `database/` |
 | **Channels** | 8 messaging platform adapters | `channels/` |
 
+### Architecture Advantages
+
+- **Claude Agent SDK Native Capabilities**: Built on Claude Code with Agent Teams, Session Resume, and Transcript Archiving
+- **MCP Deep Integration**: Configure custom MCP servers via `mcpServers`, agents can invoke them directly
+- **Skills Zero-Threshold Verification**: Use `shell` mode to directly test Skills performance in agents
+- **Filesystem Isolation**: Each group has independent `/workspace/group` directory for secure isolation
+- **Conversation Persistence**: PreCompact Hook automatically archives conversation history
+- **IPC Message Streaming**: Multi-turn dialogue support with real-time message push to running agents
+
 ### Container Isolation Design
 
 NanoGridBot borrowed the core container isolation concept from NanoClaw and enhanced it:
@@ -187,7 +199,9 @@ NanoGridBot borrowed the core container isolation concept from NanoClaw and enha
 - ✅ **Real-time Monitoring**: Web dashboard for Agent status and output
 - ✅ **Interactive Debugging**: Shell mode for direct Agent conversation
 
-### Multi-Channel Deployment
+### Multi-Channel Deployment (For Testing/Simulation)
+
+> 8 IM channels enable realistic scenario simulation for agent behavior testing, not the primary development goal.
 
 | Channel | SDK | Status |
 |---------|-----|--------|

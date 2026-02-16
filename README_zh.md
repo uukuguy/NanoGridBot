@@ -1,40 +1,39 @@
 # {🦑} NanoGridBot
 
-> 智能体开发控制台 & 轻量级运行时
+> NanoGridBot - 基于 Claude Agent SDK 驱动的智能体开发控制台。使用最强大的智能体运行时，构建、测试和验证集成 Skills、MCP 和 CLI 的 AI 智能体。
+
+[English](README.md)
 
 [![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-## 核心定位
+**NanoGridBot** 是一个基于 Claude Agent SDK 驱动的全面智能体开发平台。提供最强大的智能体运行时，具备深度 Skills、MCP 和 CLI 集成验证能力：
 
-**NanoGridBot** 是专为开发者打造的智能体开发控制台与轻量级运行时，用于构建、测试和部署跨平台的 AI 智能体。
-
-虽然源自 [NanoClaw](https://github.com/nanoclaw/nanoclaw) 的容器隔离思路，但 NanoGridBot 已演化为完整的智能体开发平台——不仅支持 Claude Code，还支持多种 LLM：
-
-- 🧪 **交互式开发**：Shell 模式实现实时智能体调试
-- ⚡ **轻量级运行时**：快速原型设计和测试，无需重型基础设施
-- 📡 **多通道部署**：支持 8 种消息平台，实现生产级环境测试
+- 🔥 **Claude Agent SDK 驱动** - 最强大的智能体运行时，基于 Claude Code
+- 🛠️ **Skills & MCP 集成** - 在隔离容器中验证 Skills、MCP 服务器和 CLI 工具
 - 🔌 **多 LLM 支持**：Claude、OpenAI、Anthropic API、自定义 LLM
-- 🛠️ **技能/插件/MCP**：通过技能、插件和 MCP 扩展能力
+- 📡 **8 个消息平台**：在生产级环境中测试（WhatsApp、Telegram、Slack、Discord、QQ、飞书、企业微信、钉钉）
+- ⚡ **交互式 Shell**：支持会话恢复的实时调试
+- 🛠️ **5 种 CLI 模式**：serve、shell、run、logs、session
 
 ## 为何选择 NanoGridBot
 
 | 特性 | 传统开发 | NanoGridBot |
 |------|----------|--------------|
-| **Agent 运行环境** | 需要手动配置 | 容器自动隔离 |
-| **多渠道部署** | 每个平台单独开发 | 统一 API，8 平台自动适配 |
-| **调试体验** | 日志 + print | Web 实时监控 + CLI 交互 |
-| **任务调度** | 外部 cron | 内置调度器 |
-| **扩展性** | 代码修改 | 插件热加载 |
+| **智能体运行时** | 手动搭建 | Claude Agent SDK - 最强大能力 |
+| **Skills/MCP/CLI** | 难以测试 | 隔离容器内集成验证 |
+| **调试** | 日志 + print | 交互式 Shell + Web 实时监控 |
+| **多轮对话** | 无状态 | 会话恢复 + IPC 消息流 |
+| **团队协作** | 单智能体 | Claude Agent SDK Teams 支持 |
 
 ## 应用场景
 
-1. **交互式智能体开发** - 使用 `shell` 模式进行实时调试和探索
-2. **功能原型与测试** - 使用 `run` 模式快速验证提示词/功能
-3. **新功能验证** - 跨多通道测试，实现生产级环境验证
-4. **个人 AI 助手** - 使用 `serve` 模式部署日常使用
-5. **企业模块调试** - 在隔离容器中调试 AI 应用功能
+1. **Skills & MCP 验证** - 在隔离容器中验证 Skills、MCP 服务器和 CLI 工具
+2. **交互式智能体开发** - 使用 `shell` 模式进行实时调试
+3. **智能体行为测试** - 跨 8 个消息平台测试智能体行为
+4. **功能原型** - 使用 `run` 模式快速验证提示词/功能
+5. **个人 AI 助手** - 使用 `serve` 模式部署日常使用
 6. **任务自动化** - 使用内置调度器实现周期性任务
 
 ## 目录
@@ -148,6 +147,15 @@ nanogridbot session resume <id>   # 显示恢复信息
 | **Database** | SQLite 持久化、消息缓存 | `database/` |
 | **Channels** | 8 种消息平台适配器 | `channels/` |
 
+### 架构优势
+
+- **Claude Agent SDK 原生能力**：基于 Claude Code 构建，具备智能体团队、会话恢复和对话归档功能
+- **MCP 深度集成**：通过 `mcpServers` 配置自定义 MCP 服务器，智能体内可直接调用
+- **Skills 零门槛验证**：使用 `shell` 模式直接测试 Skills 在智能体中的表现
+- **文件系统隔离**：每个群组独立的 `/workspace/group` 目录，安全隔离
+- **对话持久化**：PreCompact Hook 自动归档对话历史
+- **IPC 消息流**：支持多轮对话，实时推送消息到运行中的智能体
+
 ### 容器隔离设计
 
 NanoGridBot 从 NanoClaw 借鉴了容器隔离的核心思路，并进行了增强：
@@ -190,7 +198,9 @@ NanoGridBot 从 NanoClaw 借鉴了容器隔离的核心思路，并进行了增�
 - ✅ **实时监控**：Web 面板实时查看 Agent 状态和输出
 - ✅ **交互式调试**：Shell 模式直接与 Agent 对话
 
-### 多通道部署
+### 多通道部署（用于测试/模拟）
+
+> 8 个消息平台用于实现真实场景模拟，便于智能体行为测试，而非首要构建目的。
 
 | 通道 | SDK | 状态 |
 |------|-----|------|
