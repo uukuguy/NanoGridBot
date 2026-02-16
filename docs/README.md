@@ -7,11 +7,23 @@
 ```
 docs/
 ├── design/              # 设计文档
-│   ├── NANOGRIDBOT_DESIGN.md      # 架构设计文档（53KB）
-│   └── IMPLEMENTATION_PLAN.md     # 实施方案（2KB）
-└── main/                # 主要文档
-    ├── ANALYSIS_SUMMARY.md        # 分析总结（13KB）
-    └── QUICK_START.md             # 快速开始（8.4KB）
+│   ├── NANOGRIDBOT_DESIGN.md      # 架构设计文档
+│   ├── IMPLEMENTATION_PLAN.md     # 实施方案
+│   └── PROJECT_COMPARISON_ANALYSIS.md  # 项目对比分析
+├── testing/             # 测试文档
+│   ├── README.md                  # 测试文档索引
+│   ├── TEST_STRATEGY.md           # 测试策略
+│   ├── TEST_CASES.md              # 测试用例
+│   ├── TEST_DATA.md               # 测试数据
+│   ├── AUTOMATION.md              # 自动化测试
+│   ├── ENVIRONMENT_SETUP.md       # 环境配置
+│   └── TEST_REPORT_TEMPLATE.md    # 报告模板
+├── main/                # 主要文档
+│   ├── WORK_LOG.md                # 工作日志
+│   ├── ANALYSIS_SUMMARY.md        # 分析总结
+│   └── QUICK_START.md             # 快速开始
+└── dev/                 # 开发文档
+    └── NEXT_SESSION_GUIDE.md      # 下次会话指南
 ```
 
 ---
@@ -82,7 +94,23 @@ docs/
 
 ---
 
-### 4. 实施方案
+### 4. 测试文档
+
+**适合**: 测试工程师、QA、想要了解测试体系的开发者
+
+**文档**: [testing/README.md](testing/README.md)
+
+**内容**:
+- 测试策略和目标
+- 测试用例库（8大类）
+- 测试数据管理
+- 自动化测试指南
+- 测试环境配置
+- 测试报告模板
+
+---
+
+### 5. 实施方案
 
 **适合**: 项目经理、开发团队负责人
 

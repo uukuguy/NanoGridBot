@@ -1620,6 +1620,70 @@ if __name__ == "__main__":
 
 ---
 
+## 6.1 CLI 命令行接口 (`cli.py`)
+
+NanoGridBot 提供四种 CLI 模式，支持不同的使用场景：
+
+### 6.1.1 CLI 模式
+
+| 模式 | 命令 | 说明 |
+|------|------|------|
+| **serve** | `nanogridbot serve` | 启动完整服务（orchestrator + web dashboard）|
+| **shell** | `nanogridbot shell` | 交互式容器 REPL |
+| **chat** | `nanogridbot chat "prompt"` | 单次消息交互 |
+| **run** | `nanogridbot run <group>` | 对已注册群组执行 prompt |
+
+### 6.1.2 核心组件
+
+```python
+# src/nanogridbot/cli.py
+import argparse
+from nanogridbot.core.container_session import ContainerSession
+from nanogridbot.core.container_runner import run_container_agent
+
+async def cmd_serve(args):     # 启动完整服务
+async def cmd_shell(args):      # 交互式 REPL
+async def cmd_chat(args):      # 单次消息
+async def cmd_run(args):        # 群组执行
+```
+
+### 6.1.3 ContainerSession
+
+交互式 shell 模式使用的容器会话管理：
+
+```python
+class ContainerSession:
+    """管理交互式容器会话"""
+
+    def __init__(self, group_folder: str = "cli", session_id: str | None = None):
+        self.group_folder = group_folder
+        self.session_id = session_id
+        self.container_name = f"ngb-shell-{group_folder}-{uuid}"
+
+    async def start(self):      # 启动命名容器
+    async def send(self, text):  # 发送消息
+    async def receive(self):     # 接收消息 (AsyncGenerator)
+    async def close(self):       # 关闭会话
+
+    @property
+    def is_alive(self) -> bool:  # 检查会话状态
+```
+
+### 6.1.4 IPC 机制
+
+ContainerSession 通过文件系统进行 IPC 通信：
+
+```
+data_dir/ipc/{jid}/
+├── input/           # 输入文件 (JSON)
+│   ├── input-{timestamp}.json
+│   └── _close       # 关闭信号
+└── output/          # 输出文件 (JSON)
+    └── {timestamp}.json
+```
+
+---
+
 ## 7. 项目配置 (`pyproject.toml`)
 
 ```toml

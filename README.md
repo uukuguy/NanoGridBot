@@ -18,6 +18,7 @@ NanoGridBot is a complete Python port of [NanoClaw](https://github.com/nanoclaw/
 - 📊 **Web Monitoring**: Real-time system status and task management
 - 🔄 **Task Scheduling**: Cron, interval, and one-time task support
 - 🌐 **Multi-Channel**: WhatsApp, Telegram, Slack, Discord, QQ, Feishu, WeCom, DingTalk
+- 💬 **CLI Modes**: serve, shell, chat, run - flexible interaction patterns
 
 ## 📋 Table of Contents
 
@@ -89,6 +90,28 @@ docker-compose up -d
 ```
 
 See [Quick Start Guide](docs/main/QUICK_START.md) for detailed installation instructions.
+
+### CLI Usage
+
+NanoGridBot provides 4 CLI modes:
+
+```bash
+# Serve mode (default) - Start orchestrator + web dashboard
+nanogridbot serve
+nanogridbot serve --host 0.0.0.0 --port 8080
+
+# Shell mode - Interactive container-backed REPL
+nanogridbot shell
+nanogridbot shell --model claude-sonnet-4-20250514
+
+# Chat mode - Single-shot message, print response, exit
+nanogridbot chat "Your prompt here"
+echo "Your prompt" | nanogridbot chat
+
+# Run mode - Execute prompt against registered group
+nanogridbot run mygroup --context "Your task"
+nanogridbot run mygroup --send --context "Your task"
+```
 
 ## 🏗️ Architecture
 
@@ -401,8 +424,8 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file.
 
 ---
 
-**Development Status**: ✅ Phase 1-10 Complete
+**Development Status**: ✅ Phase 1-15 Complete
 
 **Current Version**: v0.1.0-alpha
 
-**Last Updated**: 2026-02-13
+**Last Updated**: 2026-02-16
