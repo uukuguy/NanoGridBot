@@ -2,9 +2,87 @@
 
 ## Current Status
 
-**Phase**: 架构文档修正完成 ✅
+**Phase**: 容器隔离增强实施完成 ✅
 **Date**: 2026-02-17
-**Project Status**: PRODUCTION READY - Claude Agent SDK Driven 🎉
+**Project Status**: CONTAINER ISOLATION ENHANCEMENT COMPLETED 🎉
+
+---
+
+## 2026-02-17 - 容器隔离增强实施完成
+
+### 本次完成的工作
+
+#### 1. 6个任务全部完成 ✅
+
+| 任务 | 功能 | 状态 | 文件变更 |
+|------|------|------|----------|
+| 1 | 环境变量安全传递 (文件挂载) | ✅ 完成 | mount_security.py, container_runner.py |
+| 2 | Skills 同步 | ✅ 完成 | mount_security.py |
+| 3 | 会话索引追踪 | ✅ 完成 | agent-runner/index.ts |
+| 4 | 优雅超时 (Grace Period) | ✅ 完成 | container_runner.py |
+| 5 | 增强日志 | ✅ 完成 | mount_security.py, container_runner.py |
+| 6 | 集成测试 | ✅ 完成 | tests/integration/test_container_isolation.py |
+
+#### 2. 实现细节
+
+**Task 1: 环境变量安全传递**
+- 新增 `create_group_env_file()` 函数，过滤 ANTHROPIC_* 变量
+- 修改 `build_docker_command()` 使用文件挂载代替 -e 参数
+
+**Task 2: Skills 同步**
+- 新增 `sync_group_skills()` 函数
+- 从 `container/skills/` 同步到各组的 `.claude/skills/`
+- 在 `validate_group_mounts()` 中自动调用
+
+**Task 3: 会话索引追踪**
+- 新增 `updateSessionsIndex()` 函数
+- 在 agent-runner/index.ts 中维护 sessions-index.json
+- 保留最近50个会话记录
+
+**Task 4: 优雅超时**
+- 新增 `GRACE_PERIOD_SECONDS = 30` 常量
+- 超时时先发送 close sentinel，等待30秒后再强制 kill
+
+**Task 5: 增强日志**
+- 添加容器挂载配置日志
+- 添加容器生命周期日志（启动/完成）
+
+**Task 6: 集成测试**
+- 新增 4 个集成测试用例
+- 验证完整挂载流程、env文件过滤、skills同步
+
+#### 3. 测试结果
+
+```
+59 tests passed (mount_security, container_runner, integration)
+```
+
+---
+
+## 下一步
+
+### 优先级 1: Git 提交
+
+所有修改已准备就绪，可提交:
+
+```bash
+git add src/nanogridbot/core/mount_security.py
+git add src/nanogridbot/core/container_runner.py
+git add container/agent-runner/src/index.ts
+git add tests/unit/test_mount_security.py
+git add tests/integration/test_container_isolation.py
+git add container/skills/
+git commit -m "feat: add container isolation enhancements"
+```
+
+### 优先级 2: 运行验证
+
+使用 `docs/main/OPERATIONAL_GUIDE.md` 验证 NanoGridBot 能否正常运行:
+
+1. 构建 Docker 镜像
+2. 配置 .env
+3. 测试 CLI shell 模式
+4. 测试 Telegram/Slack 模式
 
 ---
 

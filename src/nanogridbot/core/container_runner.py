@@ -15,6 +15,9 @@ from nanogridbot.utils.formatting import format_messages_xml
 OUTPUT_START_MARKER = "---NANOGRIDBOT_OUTPUT_START---"
 OUTPUT_END_MARKER = "---NANOGRIDBOT_OUTPUT_END---"
 
+# Grace period for container timeout (seconds)
+GRACE_PERIOD_SECONDS = 30
+
 
 async def run_container_agent(
     group_folder: str,
@@ -153,6 +156,14 @@ async def _execute_container(
             stderr=asyncio.subprocess.PIPE,
         )
 
+        # Log container start
+        logger.info(
+            "Container started: group={group}, prompt_length={prompt_length}, session_id={session_id}",
+            group=input_data.get("groupFolder"),
+            prompt_length=len(input_data.get("prompt", "")),
+            session_id=input_data.get("sessionId"),
+        )
+
         # Write input to stdin
         input_json = json.dumps(input_data)
         process.stdin.write(input_json.encode())
@@ -170,6 +181,12 @@ async def _execute_container(
             output_str = stdout.decode("utf-8", errors="replace")
             result = _parse_output(output_str)
             if result:
+                # Log container completion
+                logger.info(
+                    "Container completed: group={group}, status={status}",
+                    group=input_data.get("groupFolder"),
+                    status=result.status,
+                )
                 return result
 
         # Check for stderr errors
@@ -184,14 +201,35 @@ async def _execute_container(
         )
 
     except asyncio.TimeoutError:
-        # Try to kill the process
+        # Graceful timeout: send close sentinel first
+        logger.warning("Container timeout, attempting graceful shutdown")
+
+        # Write close sentinel to IPC
         try:
-            process.kill()
-        except Exception:
-            pass
+            ipc_path = Path("/workspace/ipc/input/_close")
+            ipc_path.parent.mkdir(parents=True, exist_ok=True)
+            ipc_path.touch()
+        except Exception as e:
+            logger.warning(f"Failed to write close sentinel: {e}")
+
+        # Wait for grace period
+        try:
+            await asyncio.wait_for(process.wait(), timeout=GRACE_PERIOD_SECONDS)
+        except asyncio.TimeoutError:
+            # Force kill after grace period
+            try:
+                process.kill()
+                await process.wait()
+            except Exception:
+                pass
+            return ContainerOutput(
+                status="error",
+                error=f"Container timed out after grace period ({GRACE_PERIOD_SECONDS}s)",
+            )
+
         return ContainerOutput(
             status="error",
-            error="Container execution timed out",
+            error="Container timed out (handled gracefully)",
         )
     except FileNotFoundError:
         return ContainerOutput(
@@ -281,9 +319,17 @@ def build_docker_command(
     cmd.extend(["-e", f"NANOGRIDBOT_IS_MAIN={str(input_data.get('isMain', False)).lower()}"])
     cmd.extend(["-e", f"NANOGRIDBOT_GROUP={input_data.get('groupFolder', '')}"])
 
-    # Add custom environment variables
-    if env:
-        for key, value in env.items():
+    # Add env file mount instead of direct -e params for sensitive vars
+    from nanogridbot.core.mount_security import create_group_env_file
+    env_mount = create_group_env_file(input_data.get("groupFolder", "default"))
+    if env_mount:
+        host_path, container_path, mode = env_mount
+        cmd.extend(["-v", f"{host_path}:{container_path}:{mode}"])
+    else:
+        # Fallback: only pass non-sensitive env vars directly
+        safe_env = {k: v for k, v in (env or {}).items()
+                    if not k.startswith("ANTHROPIC_") or k == "ANTHROPIC_MODEL"}
+        for key, value in safe_env.items():
             cmd.extend(["-e", f"{key}={value}"])
 
     # Set timeout

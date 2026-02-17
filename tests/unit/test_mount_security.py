@@ -177,3 +177,134 @@ class TestValidateGroupMounts:
                 result = await validate_group_mounts("nonexistent", is_main=True)
                 # Should still have session + ipc + project root mounts
                 assert len(result) >= 1
+
+
+class TestCreateGroupEnvFile:
+    """Tests for create_group_env_file function."""
+
+    def test_create_group_env_file_filters_correctly(self, tmp_path, monkeypatch):
+        """Test that env file is created with only allowed vars."""
+        from nanogridbot.config import Config
+        config = Config(
+            base_dir=tmp_path,
+            data_dir=tmp_path / "data",
+            groups_dir=tmp_path / "groups",
+            store_dir=tmp_path / "store",
+        )
+        # Patch the config module's get_config function
+        monkeypatch.setattr("nanogridbot.config.get_config", lambda: config)
+
+        # Create .env with multiple vars
+        env_path = tmp_path / ".env"
+        env_path.write_text("""\
+ANTHROPIC_API_KEY=sk-test-key
+OTHER_VAR=secret
+ANTHROPIC_MODEL=claude-sonnet
+DEBUG=true
+""")
+
+        from nanogridbot.core.mount_security import create_group_env_file
+        result = create_group_env_file("test-group")
+
+        assert result is not None
+        host_path, container_path, mode = result
+        assert container_path == "/workspace/env"
+        assert mode == "ro"
+
+        env_content = Path(host_path).read_text()
+        assert "ANTHROPIC_API_KEY=sk-test-key" in env_content
+        assert "ANTHROPIC_MODEL=claude-sonnet" in env_content
+        assert "OTHER_VAR" not in env_content
+        assert "DEBUG" not in env_content
+
+    def test_create_group_env_file_no_env(self, tmp_path, monkeypatch):
+        """Test None returned when no .env exists."""
+        from nanogridbot.config import Config
+        config = Config(
+            base_dir=tmp_path / "nonexistent",
+            data_dir=tmp_path / "data",
+            groups_dir=tmp_path / "groups",
+            store_dir=tmp_path / "store",
+        )
+        monkeypatch.setattr("nanogridbot.config.get_config", lambda: config)
+
+        from nanogridbot.core.mount_security import create_group_env_file
+        result = create_group_env_file("test-group")
+
+        # No .env file exists, should return None
+        assert result is None
+
+    def test_create_group_env_file_custom_vars(self, tmp_path, monkeypatch):
+        """Test custom allowed vars."""
+        from nanogridbot.config import Config
+        config = Config(
+            base_dir=tmp_path,
+            data_dir=tmp_path / "data",
+            groups_dir=tmp_path / "groups",
+            store_dir=tmp_path / "store",
+        )
+        monkeypatch.setattr("nanogridbot.config.get_config", lambda: config)
+
+        # Create .env with multiple vars
+        env_path = tmp_path / ".env"
+        env_path.write_text("""\
+ANTHROPIC_API_KEY=sk-test-key
+CUSTOM_VAR=custom-value
+DEBUG=true
+""")
+
+        from nanogridbot.core.mount_security import create_group_env_file
+        # Only allow CUSTOM_VAR
+        result = create_group_env_file("test-group", allowed_vars=["CUSTOM_VAR"])
+
+        assert result is not None
+        host_path, _, _ = result
+        env_content = Path(host_path).read_text()
+        assert "CUSTOM_VAR=custom-value" in env_content
+        assert "ANTHROPIC_API_KEY" not in env_content
+
+
+class TestSyncGroupSkills:
+    """Tests for sync_group_skills function."""
+
+    def test_sync_group_skills_no_source(self, tmp_path, monkeypatch):
+        """Test None returned when no skills source exists."""
+        from nanogridbot.config import Config
+        config = Config(
+            base_dir=tmp_path,
+            data_dir=tmp_path / "data",
+            groups_dir=tmp_path / "groups",
+            store_dir=tmp_path / "store",
+        )
+        monkeypatch.setattr("nanogridbot.config.get_config", lambda: config)
+
+        from nanogridbot.core.mount_security import sync_group_skills
+        # No container/skills directory exists
+        result = sync_group_skills("test-group")
+
+        assert result is None
+
+    def test_sync_group_skills_with_files(self, tmp_path, monkeypatch):
+        """Test skills are synced when source exists."""
+        from nanogridbot.config import Config
+        config = Config(
+            base_dir=tmp_path,
+            data_dir=tmp_path / "data",
+            groups_dir=tmp_path / "groups",
+            store_dir=tmp_path / "store",
+        )
+        monkeypatch.setattr("nanogridbot.config.get_config", lambda: config)
+
+        # Create source skills directory with files
+        skills_src = tmp_path / "container" / "skills" / "test-skill"
+        skills_src.mkdir(parents=True)
+        (skills_src / "README.md").write_text("# Test Skill")
+        (skills_src / "skill.md").write_text("## Test Skill Content")
+
+        from nanogridbot.core.mount_security import sync_group_skills
+        result = sync_group_skills("test-group")
+
+        assert result is not None
+        # Check files were copied
+        assert (result / "test-skill" / "README.md").exists()
+        assert (result / "test-skill" / "skill.md").exists()
