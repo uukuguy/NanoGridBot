@@ -1,5 +1,60 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-18 - NGB Shell TUI Phase 1 完成
+
+### 工作概述
+
+完成 NGB Shell TUI 的 Phase 1 实现，包括 ngb-tui crate 骨架、Transport trait、PipeTransport 异步实现。
+
+### 完成的工作
+
+#### 1. ngb-tui crate 骨架
+- 创建 `crates/ngb-tui/Cargo.toml`，依赖 ratatui、crossterm、tokio、async-trait、futures
+- 创建基础模块结构: app.rs, transport/mod.rs, transport/pipe.rs, transport/output.rs
+
+#### 2. Transport trait 定义 (transport/mod.rs)
+- `Transport` trait: `send()`, `recv_stream()`, `interrupt()`, `close()`
+- `OutputChunk` 枚举: Text, ToolStart/ToolEnd, ThinkingStart/ThinkingText/ThinkingEnd, Done, Error
+- JSONL 解析支持
+
+#### 3. PipeTransport 实现 (transport/pipe.rs)
+- 使用 tokio::process::Command 启动 docker run -i 容器
+- `send()`: AsyncWriteExt 异步写入 stdin
+- `recv_stream()`: async_stream 实现异步读取 stdout 流
+- 使用 Arc<AtomicBool> 标记流结束状态
+- `interrupt()` / `close()` 正确关闭进程
+
+#### 4. 基础 TUI 框架 (app.rs)
+- ratatui 初始化: enable_raw_mode, EnterAlternateScreen
+- 四区域布局: Header(3) + Chat(*) + Input(3) + Status(1)
+- 基础事件处理: 按键输入、Ctrl+C 退出
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo check -p ngb-tui` | ✅ 编译通过 |
+| `cargo test -p ngb-tui` | ✅ 3 个测试通过 |
+| `cargo clippy -p ngb-tui` | ✅ 零警告 |
+| `cargo test` | ✅ 200 个测试通过 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 进程 I/O | tokio::process::ChildStdout/Stdin | 与现有运行时集成 |
+| 流读取 | async_stream crate | 简洁的 async stream 实现 |
+| 同步状态 | Arc<AtomicBool> | 跨 async 块共享结束状态 |
+
+### 下一步: Phase 2
+
+- Task 2.1: 四区域布局完善
+- Task 2.2: Chat Area + 滚动
+- Task 2.3: Input Area 多行编辑
+- Task 2.4: 代码高亮 (syntect)
+
+---
+
 ## 2026-02-17 - Rust 重写 Phase 2: 核心运行时实现
 
 ### 工作概述

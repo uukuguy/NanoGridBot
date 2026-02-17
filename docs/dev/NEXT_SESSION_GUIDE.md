@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 1 实施中
+**Phase**: NGB Shell TUI Phase 1 ✅ 完成
 **Date**: 2026-02-18
 **Branch**: build-by-rust
-**Tests**: 197 passing (新增 3 个), zero clippy warnings
+**Tests**: 200 passing (新增 3 个), zero clippy warnings
 
 ---
 
@@ -68,20 +68,24 @@ ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 - ✅ Task 1.1: 创建 `ngb-tui` crate 骨架
 - ✅ Task 1.2: Transport trait + PipeTransport 实现
 - ✅ Task 1.3: 基础 TUI 框架（ratatui 初始化）
+- ✅ Task 1.4: PipeTransport send/recv 实现（使用 tokio 异步 I/O）
+- ✅ Task 1.5: OutputChunk JSONL 解析
 
-**新增文件**:
-- `crates/ngb-tui/Cargo.toml`
+**新增/修改文件**:
+- `crates/ngb-tui/Cargo.toml` (添加 async-stream 依赖)
 - `crates/ngb-tui/src/lib.rs`
 - `crates/ngb-tui/src/app.rs`
 - `crates/ngb-tui/src/transport/mod.rs`
-- `crates/ngb-tui/src/transport/pipe.rs`
+- `crates/ngb-tui/src/transport/pipe.rs` (重写 send/recv_stream)
 - `crates/ngb-tui/src/transport/output.rs`
 
 ## 下一步
 
-**Phase 1 剩余**:
-- 实现真正的 stdout 读取逻辑
-- 完善 PipeTransport 的 send/recv 实现
+**Phase 2: 渲染增强**:
+- Task 2.1: 四区域布局
+- Task 2.2: Chat Area + 滚动
+- Task 2.3: Input Area 多行编辑
+- Task 2.4: 代码高亮 (syntect)
 
 **Phase 2: 渲染增强**:
 - Task 2.1: 四区域布局
