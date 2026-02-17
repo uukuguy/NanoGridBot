@@ -179,7 +179,19 @@ impl Database {
             NanoGridBotError::Database(format!("Create request_metrics time index: {e}"))
         })?;
 
-        info!("Database schema initialized (5 tables, 5 indexes)");
+        // Sessions table (per-group Claude session ID persistence)
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS sessions (
+                group_folder TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| NanoGridBotError::Database(format!("Create sessions table: {e}")))?;
+
+        info!("Database schema initialized (6 tables, 5 indexes)");
         Ok(())
     }
 
@@ -230,6 +242,12 @@ mod tests {
         assert_eq!(row.0, 0);
 
         let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM request_metrics")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.0, 0);
+
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sessions")
             .fetch_one(db.pool())
             .await
             .unwrap();

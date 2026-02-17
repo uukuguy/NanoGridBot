@@ -57,6 +57,12 @@ regex = "1"
 uuid = { version = "1", features = ["v4"] }
 cron = "0.12"
 
+# Telegram
+teloxide = { version = "0.13", features = ["macros"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
 [profile.release]
 opt-level = "z"
 lto = true

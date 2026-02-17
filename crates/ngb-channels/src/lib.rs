@@ -1,1 +1,4 @@
-// ngb-channels: Channel adapters — Phase 4
+// ngb-channels: Channel adapters
+pub mod telegram;
+
+pub use telegram::TelegramChannel;

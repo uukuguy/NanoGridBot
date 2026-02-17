@@ -4,6 +4,7 @@ pub mod security;
 pub mod utils;
 
 // Phase 2: Core runtime modules
+pub mod container_prep;
 pub mod container_runner;
 pub mod container_session;
 pub mod group_queue;
@@ -24,6 +25,7 @@ pub use utils::{
 };
 
 // Phase 2 re-exports
+pub use container_prep::prepare_container_launch;
 pub use container_runner::{
     build_docker_args, check_docker_available, cleanup_container, get_container_status,
     parse_container_output, run_container_agent, OUTPUT_END_MARKER, OUTPUT_START_MARKER,
@@ -33,5 +35,5 @@ pub use group_queue::GroupQueue;
 pub use ipc_handler::{ChannelSender, IpcHandler};
 pub use mount_security::{get_allowed_mount_paths, validate_group_mounts, MountMode, MountSpec};
 pub use orchestrator::{HealthStatus, Orchestrator};
-pub use router::{MessageRouter, RouteResult};
+pub use router::{format_messages, MessageRouter, RouteResult};
 pub use task_scheduler::{calculate_next_run, TaskScheduler};

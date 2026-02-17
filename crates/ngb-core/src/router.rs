@@ -8,6 +8,21 @@ use tracing::{debug, error, info, warn};
 
 use crate::ipc_handler::ChannelSender;
 
+/// Format messages for agent consumption with timestamps and sender names.
+///
+/// Each message is formatted as `[Mon DD H:MM AM/PM] Sender: Content`.
+pub fn format_messages(messages: &[Message]) -> String {
+    messages
+        .iter()
+        .map(|m| {
+            let ts = m.timestamp.format("%b %d %-I:%M %p");
+            let sender = m.sender_name.as_deref().unwrap_or(&m.sender);
+            format!("[{}] {}: {}", ts, sender, m.content)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Message router that matches incoming messages against group triggers
 /// and dispatches responses to the appropriate channels.
 pub struct MessageRouter {
@@ -174,7 +189,7 @@ fn matches_trigger(pattern: &str, content: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use chrono::{TimeZone, Utc};
     use ngb_db::GroupRepository;
     use ngb_types::{MessageRole, RegisteredGroup};
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -382,5 +397,56 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(tg_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn format_messages_basic() {
+        let messages = vec![
+            Message {
+                id: "1".to_string(),
+                chat_jid: "tg:123".to_string(),
+                sender: "user1".to_string(),
+                sender_name: Some("Alice".to_string()),
+                content: "Hello everyone".to_string(),
+                timestamp: Utc.with_ymd_and_hms(2026, 1, 31, 14, 32, 0).unwrap(),
+                is_from_me: false,
+                role: MessageRole::User,
+            },
+            Message {
+                id: "2".to_string(),
+                chat_jid: "tg:123".to_string(),
+                sender: "user2".to_string(),
+                sender_name: Some("Bob".to_string()),
+                content: "@Bot help me".to_string(),
+                timestamp: Utc.with_ymd_and_hms(2026, 1, 31, 14, 35, 0).unwrap(),
+                is_from_me: false,
+                role: MessageRole::User,
+            },
+        ];
+        let result = format_messages(&messages);
+        assert!(result.contains("[Jan 31 2:32 PM] Alice: Hello everyone"));
+        assert!(result.contains("[Jan 31 2:35 PM] Bob: @Bot help me"));
+    }
+
+    #[test]
+    fn format_messages_empty() {
+        let result = format_messages(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn format_messages_uses_sender_fallback() {
+        let msg = Message {
+            id: "1".to_string(),
+            chat_jid: "tg:123".to_string(),
+            sender: "user123".to_string(),
+            sender_name: None,
+            content: "hi".to_string(),
+            timestamp: Utc.with_ymd_and_hms(2026, 3, 15, 9, 5, 0).unwrap(),
+            is_from_me: false,
+            role: MessageRole::User,
+        };
+        let result = format_messages(&[msg]);
+        assert!(result.contains("user123: hi"));
     }
 }

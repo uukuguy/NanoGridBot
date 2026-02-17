@@ -2,40 +2,46 @@
 
 ## Current Status
 
-**Phase**: Rust 重写 - Phase 3 MVP 实现中 🚀
+**Phase**: Rust 重写 - Phase 3 MVP 实现完成 ✅
 **Date**: 2026-02-17
 **Branch**: build-by-rust
-**Project Status**: Phase 3 MVP 设计完成，实现计划已写入 `docs/plans/2026-02-17-mvp-phase3.md`
+**Project Status**: Phase 3 MVP 全部 8 个 Task 实现完成，181 tests passing
 
 ---
 
-## 2026-02-17 - Phase 3 MVP 设计完成 ✅
+## 2026-02-17 - Phase 3 MVP 实现完成 ✅
 
-### 执行入口
+### 本阶段成果
 
-**实现计划**: `docs/plans/2026-02-17-mvp-phase3.md`
-**执行方式**: 使用 `superpowers:executing-plans` 或 `superpowers:subagent-driven-development`
+实现了最小可运行的智能体系统：Telegram 接收消息 → Docker 容器运行 Claude Code → 回复用户
 
-### 8 个 Task 概览
+| Task | 内容 | 文件 | 新增测试 |
+|------|------|------|----------|
+| 1 | agent-runner 从 nanoclaw 适配 | `container/agent-runner/src/{index,ipc-mcp-stdio}.ts` | — |
+| 2 | Dockerfile + build.sh | `container/{Dockerfile,build.sh}` | — |
+| 3 | format_messages() 消息格式化 | `crates/ngb-core/src/router.rs` | 3 |
+| 4 | Session ID 持久化 | `crates/ngb-db/src/sessions.rs` | 3 |
+| 5 | 容器启动准备 | `crates/ngb-core/src/container_prep.rs` | 9 |
+| 6 | Telegram Channel 适配器 | `crates/ngb-channels/src/telegram.rs` | 4 |
+| 7 | CLI serve 子命令 | `crates/ngb-cli/src/main.rs` | — |
+| 8 | 集成验证 | 全 workspace | — |
 
-| Task | 内容 | 阶段 |
-|------|------|------|
-| 1 | agent-runner 从 nanoclaw 适配（改名 ngb） | A. 容器层 |
-| 2 | Dockerfile + build.sh | A. 容器层 |
-| 3 | router.rs 消息格式化 format_messages() | B. Rust 增强 |
-| 4 | SessionRepository + Session ID 持久化 | B. Rust 增强 |
-| 5 | container_prep.rs 容器启动准备 | B. Rust 增强 |
-| 6 | Telegram Channel 适配器 (teloxide) | C. 新模块 |
-| 7 | CLI serve 子命令 (clap) | C. 新模块 |
-| 8 | 集成测试 + 端到端验证 | C. 端到端 |
+**测试统计**：
+| Crate | 测试数 |
+|-------|--------|
+| `ngb-channels` | 4 (新) |
+| `ngb-config` | 10 |
+| `ngb-core` | 115 (103 + 12 新) |
+| `ngb-db` | 30 (27 + 3 新) |
+| `ngb-types` | 22 |
+| **总计** | **181** |
 
-### 关键设计决策
-
-1. **agent-runner**: 从 nanoclaw 适配 Node.js agent-runner，不用 shell 脚本（需要 query loop + MessageStream）
-2. **Docker ↔ Group**: 1 Group 同时最多 1 容器，多成员消息汇聚为单个 prompt
-3. **Group 持久化**: groups/{name}/ 工作空间 + data/sessions/{name}/.claude/ 隔离会话
-4. **Skills 共享**: container/skills/ 复制到每个 group 的 .claude/skills/
-5. **P1 后续**: 流式输出、idle timeout、消息管道在 MVP 跑通后迭代
+**验证结果**：
+- `cargo build --workspace` ✅
+- `cargo test --workspace` — 181 个测试全部通过 ✅
+- `cargo clippy --workspace -- -D warnings` — 零警告 ✅
+- `cargo fmt --all -- --check` — 格式一致 ✅
+- `ngb --help` — CLI 正常输出 ✅
 
 ### 新增依赖
 
@@ -43,137 +49,52 @@
 |------|------|
 | `teloxide = "0.13"` | Telegram Bot API |
 | `clap = "4"` | CLI 参数解析 |
-
-### nanoclaw 参考文件
-
-| 文件 | 用途 |
-|------|------|
-| `./github.com/nanoclaw/container/agent-runner/src/index.ts` | agent-runner 主逻辑 |
-| `./github.com/nanoclaw/container/agent-runner/src/ipc-mcp-stdio.ts` | MCP server |
-| `./github.com/nanoclaw/container/Dockerfile` | 容器镜像参考 |
-| `./github.com/nanoclaw/src/container-runner.ts` | 宿主端容器管理参考 |
+| `anyhow = "1"` | CLI 错误处理 |
+| `dotenvy = "0.15"` | CLI 环境变量加载 |
 
 ---
 
-## 2026-02-17 - Phase 2 核心运行时完成 ✅
+## 下一阶段：端到端验证 + P1 增强
 
-### 本阶段成果
+### 优先级 1：端到端验证（用户手动执行）
 
-在 `ngb-core` 中实现了 8 个核心运行时模块，将 ngb-core 从工具库转变为完整的容器编排运行时：
+1. 构建 Docker 镜像：`cd container && ./build.sh`
+2. 配置 `.env`：
+   ```
+   ANTHROPIC_API_KEY=sk-ant-...
+   TELEGRAM_BOT_TOKEN=123456:ABC...
+   ```
+3. 创建 `groups/main/CLAUDE.md`（agent 指令文件）
+4. 注册 Telegram group 到数据库
+5. 运行：`cargo run -p ngb-cli -- serve`
+6. 在 Telegram 中发送 `@Andy hello`，验证收到回复
 
-| 模块 | 功能 | 测试数 |
-|------|------|--------|
-| `mount_security.rs` | Docker 挂载验证、路径白名单 | 6 |
-| `container_runner.rs` | Docker 容器执行、输出解析 | 10 |
-| `container_session.rs` | 交互式容器会话、文件 IPC | 6 |
-| `ipc_handler.rs` | ChannelSender trait + 文件 IPC 处理 | 7 |
-| `group_queue.rs` | 并发容器管理、状态机、重试 | 12 |
-| `task_scheduler.rs` | CRON/INTERVAL/ONCE 调度 | 13 |
-| `router.rs` | 消息路由、触发器匹配 | 7 |
-| `orchestrator.rs` | 总协调器、消息循环、健康状态 | 10 |
+### 优先级 2：P1 增强（MVP 跑通后）
 
-**测试统计**：
-| Crate | 测试数 |
-|-------|--------|
-| `ngb-core` | 103 (32 Phase 1 + 71 Phase 2) |
-| `ngb-db` | 27 |
-| `ngb-types` | 22 |
-| `ngb-config` | 10 |
-| **总计** | **162** |
+| Gap | 内容 | 影响 |
+|-----|------|------|
+| Gap 1 | 流式输出解析（实时 marker-based） | 用户更快看到回复 |
+| Gap 2 | Idle timeout + _close sentinel | 容器保活，减少启动开销 |
+| Gap 3 | 消息管道到活跃容器 | 多轮对话不需新容器 |
 
-**验证结果**：
-- `cargo build` ✅
-- `cargo test` — 162 个测试全部通过 ✅
-- `cargo clippy -- -D warnings` — 零警告 ✅
-- `cargo fmt -- --check` — 格式一致 ✅
+### 优先级 3：Web API + 更多 CLI 子命令
 
-### 关键技术决策
+- `ngb-web`：axum REST API + WebSocket 监控
+- CLI 扩展：`shell`, `run`, `logs`, `session` 子命令
 
-| 决策 | 选择 | 理由 |
-|------|------|------|
-| ChannelSender trait 异步方法 | `Pin<Box<dyn Future>>` | MSRV Rust 1.75 不支持原生 async fn in traits |
-| CRON 解析 | `cron` 0.12 (7-field 格式) | 5-field 转 7-field: prepend "0", append "*" |
-| Docker 交互 | `tokio::process::Command` | 与 Python 版一致，无需额外 SDK |
-| 并发锁策略 | `tokio::sync::Mutex` + `tokio::spawn` | 避免 hold lock across await |
-| 群组队列状态机 | 辅助函数 `ensure_state`/`try_activate` | 解决 HashMap borrow checker 冲突 |
-| IPC 写入 | 原子写入 (tmp + rename) | 避免文件竞争 |
-| 重试策略 | 指数退避 `5 * 2^(n-1)` 秒, 最多 5 次 | 平衡响应速度和系统负载 |
-
-### 新增依赖
-
-| 依赖 | 用途 |
-|------|------|
-| `cron = "0.12"` | CRON 表达式解析 |
-| `ngb-db` (内部) | ngb-core 依赖 ngb-db (orchestrator 等需要数据库操作) |
-| `tempfile = "3"` (dev) | IPC 和容器会话测试 |
-
----
-
-## 下一阶段：Phase 3 Web API + CLI
-
-### 目标
-
-实现 `ngb-web` (REST API + WebSocket) 和 `ngb-cli` (命令行接口)。
-
-### 模块清单
-
-#### 1. ngb-web — Web API 和监控面板
-- 使用 `axum` 框架 (async, tower-compatible)
-- REST API 端点:
-  - `GET /api/health` — 健康检查
-  - `GET /api/groups` — 群组列表
-  - `GET /api/tasks` — 任务列表
-  - `GET /api/messages` — 最近消息
-  - `GET /api/metrics/containers` — 容器统计
-  - `POST /api/groups` — 注册群组
-  - `DELETE /api/groups/{jid}` — 注销群组
-- WebSocket `/ws` — 实时状态更新
-- 静态文件服务 (Vue.js 前端)
-- **参考**: `src/nanogridbot/web/app.py`
-
-#### 2. ngb-cli — 命令行接口
-- 使用 `clap` 框架 (derive API)
-- 子命令: `serve`, `shell`, `run`, `logs`, `session`
-- `serve` — 启动 orchestrator + web server
-- `shell` — 交互式容器 shell (ContainerSession)
-- `run` — 一次性容器执行
-- `logs` — 查看日志
-- `session` — 管理会话 (ls/kill)
-- **参考**: `src/nanogridbot/cli.py`
-
-### 新增依赖（预估）
-
-| 依赖 | 用途 |
-|------|------|
-| `axum` | Web 框架 |
-| `tower` / `tower-http` | 中间件 (CORS, logging) |
-| `clap` | CLI 参数解析 |
-| `tokio-tungstenite` | WebSocket |
-
-### 验证标准
-- Web API 端点可访问
-- CLI 子命令正常执行
-- `cargo test` + `cargo clippy -- -D warnings` 全部通过
-
-### 关键注意事项
-
-1. **Phase 2 已有的核心运行时**：Orchestrator, GroupQueue, TaskScheduler 等均已实现，Phase 3 只需在 Web/CLI 层调用
-2. **Orchestrator 是核心入口**：Web API 和 CLI 都通过 Orchestrator 操作
-3. **ChannelSender trait**：使用 `Pin<Box<dyn Future>>` 风格，非原生 async fn in traits
-4. **测试策略**：Web API 测试使用 axum::test_helpers，CLI 测试使用 assert_cmd
-
-### 依赖图更新
+### 依赖图
 
 ```
 ngb-types (零依赖)
     ↓
 ngb-config (← ngb-types)
     ↓           ↓
-ngb-db      ngb-core [Phase 1: utils + Phase 2: runtime]
+ngb-db      ngb-core [Phase 1 utils + Phase 2 runtime + Phase 3 container_prep]
 (← types    (← types + config + db)
  + config)      ↓
-            ngb-web (← ngb-core + ngb-db + ngb-types + ngb-config)
-            ngb-cli (← ngb-web + ngb-core + ngb-db + ngb-types + ngb-config)
+            ngb-channels (← ngb-types + ngb-core + ngb-db + ngb-config + teloxide)
+                ↓
+            ngb-cli (← ngb-channels + ngb-core + ngb-db + ngb-config + clap)
 ```
 
 ---
@@ -182,6 +103,10 @@ ngb-db      ngb-core [Phase 1: utils + Phase 2: runtime]
 
 <details>
 <summary>Phase 2 之前的历史（点击展开）</summary>
+
+### 2026-02-17 - Phase 2 核心运行时完成
+
+在 `ngb-core` 中实现了 8 个核心运行时模块（container_runner, container_session, ipc_handler, group_queue, task_scheduler, router, orchestrator, mount_security），162 tests passing。
 
 ### 2026-02-17 - Phase 1 基础层完成
 
@@ -208,4 +133,4 @@ ngb-db      ngb-core [Phase 1: utils + Phase 2: runtime]
 
 **Created**: 2026-02-13
 **Updated**: 2026-02-17
-**Project Status**: Phase 2 核心运行时完成 — 准备进入 Phase 3 Web API + CLI
+**Project Status**: Phase 3 MVP 实现完成 — 准备端到端验证
