@@ -2,10 +2,56 @@
 
 ## Current Status
 
-**Phase**: Rust 重写 - Phase 3 准备中 🚀
+**Phase**: Rust 重写 - Phase 3 MVP 实现中 🚀
 **Date**: 2026-02-17
 **Branch**: build-by-rust
-**Project Status**: Phase 2 核心运行时已完成，准备开始 Phase 3
+**Project Status**: Phase 3 MVP 设计完成，实现计划已写入 `docs/plans/2026-02-17-mvp-phase3.md`
+
+---
+
+## 2026-02-17 - Phase 3 MVP 设计完成 ✅
+
+### 执行入口
+
+**实现计划**: `docs/plans/2026-02-17-mvp-phase3.md`
+**执行方式**: 使用 `superpowers:executing-plans` 或 `superpowers:subagent-driven-development`
+
+### 8 个 Task 概览
+
+| Task | 内容 | 阶段 |
+|------|------|------|
+| 1 | agent-runner 从 nanoclaw 适配（改名 ngb） | A. 容器层 |
+| 2 | Dockerfile + build.sh | A. 容器层 |
+| 3 | router.rs 消息格式化 format_messages() | B. Rust 增强 |
+| 4 | SessionRepository + Session ID 持久化 | B. Rust 增强 |
+| 5 | container_prep.rs 容器启动准备 | B. Rust 增强 |
+| 6 | Telegram Channel 适配器 (teloxide) | C. 新模块 |
+| 7 | CLI serve 子命令 (clap) | C. 新模块 |
+| 8 | 集成测试 + 端到端验证 | C. 端到端 |
+
+### 关键设计决策
+
+1. **agent-runner**: 从 nanoclaw 适配 Node.js agent-runner，不用 shell 脚本（需要 query loop + MessageStream）
+2. **Docker ↔ Group**: 1 Group 同时最多 1 容器，多成员消息汇聚为单个 prompt
+3. **Group 持久化**: groups/{name}/ 工作空间 + data/sessions/{name}/.claude/ 隔离会话
+4. **Skills 共享**: container/skills/ 复制到每个 group 的 .claude/skills/
+5. **P1 后续**: 流式输出、idle timeout、消息管道在 MVP 跑通后迭代
+
+### 新增依赖
+
+| 依赖 | 用途 |
+|------|------|
+| `teloxide = "0.13"` | Telegram Bot API |
+| `clap = "4"` | CLI 参数解析 |
+
+### nanoclaw 参考文件
+
+| 文件 | 用途 |
+|------|------|
+| `./github.com/nanoclaw/container/agent-runner/src/index.ts` | agent-runner 主逻辑 |
+| `./github.com/nanoclaw/container/agent-runner/src/ipc-mcp-stdio.ts` | MCP server |
+| `./github.com/nanoclaw/container/Dockerfile` | 容器镜像参考 |
+| `./github.com/nanoclaw/src/container-runner.ts` | 宿主端容器管理参考 |
 
 ---
 
