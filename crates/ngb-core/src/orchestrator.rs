@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
-use crate::group_queue::GroupQueue;
 use crate::ipc_handler::{ChannelSender, IpcHandler};
 use crate::router::{MessageRouter, RouteAction};
 use crate::task_scheduler::TaskScheduler;
+use crate::workspace_queue::WorkspaceQueue;
 
 /// System health status snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub struct Orchestrator {
     config: Config,
     db: Arc<Database>,
     channels: Arc<Vec<Box<dyn ChannelSender>>>,
-    queue: Arc<GroupQueue>,
+    queue: Arc<WorkspaceQueue>,
     scheduler: Mutex<TaskScheduler>,
     ipc_handler: Mutex<IpcHandler>,
     router: MessageRouter,
@@ -55,7 +55,7 @@ impl Orchestrator {
     /// Create a new orchestrator instance.
     pub fn new(config: Config, db: Arc<Database>, channels: Vec<Box<dyn ChannelSender>>) -> Self {
         let channels = Arc::new(channels);
-        let queue = Arc::new(GroupQueue::new(config.clone(), db.clone()));
+        let queue = Arc::new(WorkspaceQueue::new(config.clone(), db.clone()));
         let scheduler = TaskScheduler::new(db.clone(), queue.clone());
         let ipc_handler = IpcHandler::new(channels.clone(), &config);
         let router = MessageRouter::new(config.clone(), db.clone(), channels.clone());
@@ -385,8 +385,8 @@ impl Orchestrator {
         }
     }
 
-    /// Get a reference to the group queue.
-    pub fn queue(&self) -> &Arc<GroupQueue> {
+    /// Get a reference to the workspace queue.
+    pub fn queue(&self) -> &Arc<WorkspaceQueue> {
         &self.queue
     }
 

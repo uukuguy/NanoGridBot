@@ -6,8 +6,10 @@ use ngb_channels::TelegramChannel;
 use ngb_config::Config;
 use ngb_core::ipc_handler::ChannelSender;
 use ngb_core::Orchestrator;
-use ngb_db::Database;
+use ngb_db::{BindingRepository, Database, TokenRepository, WorkspaceRepository};
+use ngb_types::Workspace;
 use tracing::{error, info};
+use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(name = "ngb", about = "NanoGridBot - Agent Runtime", version)]
@@ -20,6 +22,22 @@ struct Cli {
 enum Commands {
     /// Start the orchestrator and channel listeners
     Serve,
+    /// Manage workspaces
+    Workspace {
+        #[command(subcommand)]
+        action: WorkspaceAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorkspaceAction {
+    /// Create a new workspace and generate an access token
+    Create {
+        /// Name for the workspace
+        name: String,
+    },
+    /// List all workspaces and their bindings
+    List,
 }
 
 #[tokio::main]
@@ -27,7 +45,116 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Serve => serve().await?,
+        Commands::Workspace { action } => workspace(action).await?,
     }
+    Ok(())
+}
+
+async fn workspace(action: WorkspaceAction) -> anyhow::Result<()> {
+    let config = Config::load().context("Failed to load configuration")?;
+    config
+        .create_directories()
+        .context("Failed to create directories")?;
+
+    std::fs::create_dir_all(config.db_path.parent().unwrap_or(&config.store_dir))
+        .context("Failed to create database directory")?;
+    let db = Database::new(&config.db_path)
+        .await
+        .context("Failed to connect to database")?;
+    db.initialize()
+        .await
+        .context("Failed to initialize database schema")?;
+
+    match action {
+        WorkspaceAction::Create { name } => workspace_create(&db, &name).await?,
+        WorkspaceAction::List => workspace_list(&db).await?,
+    }
+
+    db.close().await;
+    Ok(())
+}
+
+async fn workspace_create(db: &Database, name: &str) -> anyhow::Result<()> {
+    let ws_id = format!("ws-{}", &Uuid::new_v4().simple().to_string()[..8]);
+    let folder = name.to_string();
+
+    let ws = Workspace {
+        id: ws_id.clone(),
+        name: name.to_string(),
+        owner: "cli".to_string(),
+        folder,
+        shared: false,
+        container_config: None,
+    };
+
+    let ws_repo = WorkspaceRepository::new(db);
+    ws_repo
+        .save(&ws)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let token_repo = TokenRepository::new(db);
+    let token = token_repo
+        .create_token(&ws_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    println!("Workspace created:");
+    println!("  ID:     {ws_id}");
+    println!("  Name:   {name}");
+    println!("  Folder: {}", ws.folder);
+    println!("  Token:  {token}");
+    println!();
+    println!("Send this token in a chat to bind it to this workspace.");
+
+    Ok(())
+}
+
+async fn workspace_list(db: &Database) -> anyhow::Result<()> {
+    let ws_repo = WorkspaceRepository::new(db);
+    let workspaces = ws_repo
+        .get_all()
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if workspaces.is_empty() {
+        println!("No workspaces found. Create one with: ngb workspace create <name>");
+        return Ok(());
+    }
+
+    let binding_repo = BindingRepository::new(db);
+
+    println!(
+        "{:<12} {:<20} {:<20} BINDINGS",
+        "ID", "NAME", "FOLDER"
+    );
+    println!("{}", "-".repeat(72));
+
+    for ws in &workspaces {
+        let bindings = binding_repo
+            .get_by_workspace(&ws.id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let binding_str = if bindings.is_empty() {
+            "(none)".to_string()
+        } else {
+            bindings
+                .iter()
+                .map(|b| b.channel_jid.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        println!(
+            "{:<12} {:<20} {:<20} {}",
+            ws.id, ws.name, ws.folder, binding_str
+        );
+    }
+
+    println!();
+    println!("{} workspace(s) total", workspaces.len());
+
     Ok(())
 }
 

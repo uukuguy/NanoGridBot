@@ -9,24 +9,24 @@ use regex::Regex;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-use crate::group_queue::GroupQueue;
+use crate::workspace_queue::WorkspaceQueue;
 
 /// Poll interval for the scheduler loop (seconds).
 const SCHEDULER_POLL_SECS: u64 = 60;
 
 /// CRON/INTERVAL/ONCE task scheduler.
 ///
-/// Periodically checks for due tasks and enqueues them into the GroupQueue.
+/// Periodically checks for due tasks and enqueues them into the WorkspaceQueue.
 pub struct TaskScheduler {
     db: Arc<Database>,
-    queue: Arc<GroupQueue>,
+    queue: Arc<WorkspaceQueue>,
     running: Arc<AtomicBool>,
     task_handle: Option<JoinHandle<()>>,
 }
 
 impl TaskScheduler {
     /// Create a new scheduler.
-    pub fn new(db: Arc<Database>, queue: Arc<GroupQueue>) -> Self {
+    pub fn new(db: Arc<Database>, queue: Arc<WorkspaceQueue>) -> Self {
         Self {
             db,
             queue,
@@ -127,8 +127,8 @@ impl TaskScheduler {
     }
 }
 
-/// Check for due tasks and enqueue them into the GroupQueue.
-async fn check_and_enqueue_due_tasks(db: &Database, queue: &GroupQueue) -> Result<()> {
+/// Check for due tasks and enqueue them into the WorkspaceQueue.
+async fn check_and_enqueue_due_tasks(db: &Database, queue: &WorkspaceQueue) -> Result<()> {
     let repo = TaskRepository::new(db);
     let due_tasks = repo.get_due().await?;
 
@@ -362,7 +362,7 @@ mod tests {
         db.initialize().await.unwrap();
 
         let cfg = test_config();
-        let queue = Arc::new(GroupQueue::new(cfg, db.clone()));
+        let queue = Arc::new(WorkspaceQueue::new(cfg, db.clone()));
         let mut scheduler = TaskScheduler::new(db, queue);
 
         assert!(!scheduler.is_running());
@@ -378,7 +378,7 @@ mod tests {
         db.initialize().await.unwrap();
 
         let cfg = test_config();
-        let queue = Arc::new(GroupQueue::new(cfg, db.clone()));
+        let queue = Arc::new(WorkspaceQueue::new(cfg, db.clone()));
         let scheduler = TaskScheduler::new(db.clone(), queue);
 
         let task = ScheduledTask {
@@ -414,7 +414,7 @@ mod tests {
         db.initialize().await.unwrap();
 
         let cfg = test_config();
-        let queue = Arc::new(GroupQueue::new(cfg, db.clone()));
+        let queue = Arc::new(WorkspaceQueue::new(cfg, db.clone()));
         let scheduler = TaskScheduler::new(db.clone(), queue);
 
         let task = ScheduledTask {

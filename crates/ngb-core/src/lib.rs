@@ -7,7 +7,6 @@ pub mod utils;
 pub mod container_prep;
 pub mod container_runner;
 pub mod container_session;
-pub mod group_queue;
 pub mod ipc_handler;
 pub mod mount_security;
 pub mod orchestrator;
@@ -32,7 +31,6 @@ pub use container_runner::{
     parse_container_output, run_container_agent, OUTPUT_END_MARKER, OUTPUT_START_MARKER,
 };
 pub use container_session::ContainerSession;
-pub use group_queue::GroupQueue;
 pub use ipc_handler::{ChannelSender, IpcHandler};
 pub use mount_security::{get_allowed_mount_paths, validate_workspace_mounts, MountMode, MountSpec};
 pub use orchestrator::{HealthStatus, Orchestrator};

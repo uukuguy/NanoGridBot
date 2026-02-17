@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use ngb_config::Config;
-use ngb_types::{NanoGridBotError, RegisteredGroup, Result, ScheduledTask};
+use ngb_types::{NanoGridBotError, Result, ScheduledTask, Workspace};
 use tracing::{debug, info};
 
 /// Ensure the group workspace and IPC directories exist.
@@ -166,12 +166,12 @@ pub fn write_tasks_snapshot(
     Ok(())
 }
 
-/// Write a snapshot of available groups to the IPC directory.
+/// Write a snapshot of available workspaces to the IPC directory.
 pub fn write_workspaces_snapshot(
     ipc_dir: &Path,
     group_folder: &str,
     is_main: bool,
-    groups: &[RegisteredGroup],
+    workspaces: &[Workspace],
 ) -> Result<()> {
     // Only main group gets the full list
     if !is_main {
@@ -182,18 +182,18 @@ pub fn write_workspaces_snapshot(
     std::fs::create_dir_all(&group_ipc)
         .map_err(|e| NanoGridBotError::Container(format!("Failed to create IPC dir: {e}")))?;
 
-    let path = group_ipc.join("available_groups.json");
-    let content = serde_json::to_string_pretty(groups)
-        .map_err(|e| NanoGridBotError::Container(format!("Failed to serialize groups: {e}")))?;
+    let path = group_ipc.join("available_workspaces.json");
+    let content = serde_json::to_string_pretty(workspaces)
+        .map_err(|e| NanoGridBotError::Container(format!("Failed to serialize workspaces: {e}")))?;
 
     std::fs::write(&path, content).map_err(|e| {
-        NanoGridBotError::Container(format!("Failed to write groups snapshot: {e}"))
+        NanoGridBotError::Container(format!("Failed to write workspaces snapshot: {e}"))
     })?;
 
     debug!(
         group = group_folder,
-        count = groups.len(),
-        "Groups snapshot written"
+        count = workspaces.len(),
+        "Workspaces snapshot written"
     );
     Ok(())
 }
@@ -221,7 +221,7 @@ pub fn prepare_container_launch(
     group_folder: &str,
     is_main: bool,
     tasks: &[ScheduledTask],
-    groups: &[RegisteredGroup],
+    workspaces: &[Workspace],
 ) -> Result<HashMap<String, String>> {
     // 1. Ensure directories
     ensure_workspace_dirs(config, group_folder)?;
@@ -238,8 +238,8 @@ pub fn prepare_container_launch(
     let ipc_dir = config.data_dir.join("ipc");
     write_tasks_snapshot(&ipc_dir, group_folder, is_main, tasks)?;
 
-    // 5. Write groups snapshot
-    write_workspaces_snapshot(&ipc_dir, group_folder, is_main, groups)?;
+    // 5. Write workspaces snapshot
+    write_workspaces_snapshot(&ipc_dir, group_folder, is_main, workspaces)?;
 
     // 6. Filter env vars
     let env = filter_env_vars(config);
@@ -482,13 +482,13 @@ mod tests {
             "main",
             true,
             &[],
-            &[RegisteredGroup {
-                jid: "telegram:123".to_string(),
+            &[Workspace {
+                id: "ws-main".to_string(),
                 name: "Main".to_string(),
+                owner: "test".to_string(),
                 folder: "main".to_string(),
-                trigger_pattern: None,
+                shared: false,
                 container_config: None,
-                requires_trigger: true,
             }],
         )
         .unwrap();
@@ -513,7 +513,7 @@ mod tests {
         assert!(config.data_dir.join("ipc/main/current_tasks.json").exists());
         assert!(config
             .data_dir
-            .join("ipc/main/available_groups.json")
+            .join("ipc/main/available_workspaces.json")
             .exists());
 
         // Verify env

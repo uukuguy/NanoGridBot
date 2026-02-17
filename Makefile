@@ -136,12 +136,19 @@ docker-clean: ## Remove agent Docker image
 # Run
 # ============================================================
 
-.PHONY: serve serve-release
+.PHONY: serve serve-release workspace-create workspace-list
 serve: ## Start NanoGridBot (debug build)
 	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- serve
 
 serve-release: ## Start NanoGridBot (release build)
 	$(CARGO) run -p $(CLI_CRATE) --release -- serve
+
+workspace-create: ## Create a workspace (NAME=my-agent)
+	@if [ -z "$(NAME)" ]; then echo "$(RED)Usage: make workspace-create NAME=my-agent$(NC)"; exit 1; fi
+	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- workspace create $(NAME)
+
+workspace-list: ## List all workspaces and bindings
+	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- workspace list
 
 # ============================================================
 # Combined Targets
