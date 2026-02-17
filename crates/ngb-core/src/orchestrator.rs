@@ -4,15 +4,15 @@ use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use ngb_config::Config;
-use ngb_db::{Database, GroupRepository, MessageRepository};
-use ngb_types::{Message, NanoGridBotError, RegisteredGroup, Result};
+use ngb_db::{BindingRepository, Database, MessageRepository, TokenRepository, WorkspaceRepository};
+use ngb_types::{Message, NanoGridBotError, Result, Workspace};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::group_queue::GroupQueue;
 use crate::ipc_handler::{ChannelSender, IpcHandler};
-use crate::router::MessageRouter;
+use crate::router::{MessageRouter, RouteAction};
 use crate::task_scheduler::TaskScheduler;
 
 /// System health status snapshot.
@@ -30,9 +30,10 @@ pub struct HealthStatus {
 /// Main orchestrator that ties all subsystems together.
 ///
 /// Responsible for:
-/// - Loading registered groups from DB
+/// - Loading workspaces from DB
 /// - Starting/stopping subsystems (scheduler, IPC handler)
 /// - Running the message polling loop
+/// - Handling token binding and guidance messages
 /// - Providing health status
 pub struct Orchestrator {
     config: Config,
@@ -42,7 +43,7 @@ pub struct Orchestrator {
     scheduler: Mutex<TaskScheduler>,
     ipc_handler: Mutex<IpcHandler>,
     router: MessageRouter,
-    registered_groups: Mutex<HashMap<String, RegisteredGroup>>,
+    workspaces: Mutex<HashMap<String, Workspace>>,
     last_timestamp: Mutex<Option<DateTime<Utc>>>,
     start_time: Mutex<Option<Instant>>,
     healthy: Mutex<bool>,
@@ -68,7 +69,7 @@ impl Orchestrator {
             scheduler: Mutex::new(scheduler),
             ipc_handler: Mutex::new(ipc_handler),
             router,
-            registered_groups: Mutex::new(HashMap::new()),
+            workspaces: Mutex::new(HashMap::new()),
             last_timestamp: Mutex::new(None),
             start_time: Mutex::new(None),
             healthy: Mutex::new(false),
@@ -79,24 +80,31 @@ impl Orchestrator {
 
     /// Start the orchestrator and all subsystems.
     ///
-    /// Flow: load groups from DB → start scheduler → start IPC handler →
+    /// Flow: load workspaces from DB → start scheduler → start IPC handler →
     /// set healthy → begin message loop.
     pub async fn start(&self) -> Result<()> {
         info!("Starting orchestrator");
 
-        // Load registered groups from DB
-        let repo = GroupRepository::new(&self.db);
-        let groups = repo.get_all().await?;
+        // Load workspaces from DB
+        let ws_repo = WorkspaceRepository::new(&self.db);
+        let all_ws = ws_repo.get_all().await?;
         {
-            let mut reg = self.registered_groups.lock().await;
-            for group in &groups {
-                reg.insert(group.jid.clone(), group.clone());
+            let mut ws_map = self.workspaces.lock().await;
+            for ws in &all_ws {
+                ws_map.insert(ws.id.clone(), ws.clone());
             }
         }
-        info!(count = groups.len(), "Loaded registered groups");
+        info!(count = all_ws.len(), "Loaded workspaces");
 
-        // Collect JIDs for IPC handler
-        let jids: Vec<String> = groups.iter().map(|g| g.jid.clone()).collect();
+        // Load bindings to get JIDs for IPC handler
+        let binding_repo = BindingRepository::new(&self.db);
+        let mut jids = Vec::new();
+        for ws in &all_ws {
+            let bindings = binding_repo.get_by_workspace(&ws.id).await?;
+            for b in bindings {
+                jids.push(b.channel_jid);
+            }
+        }
 
         // Start subsystems
         {
@@ -117,9 +125,6 @@ impl Orchestrator {
     }
 
     /// Run the message polling loop.
-    ///
-    /// Polls for new messages at `config.poll_interval` and routes them
-    /// through the router and group queue. Exits on shutdown signal.
     pub async fn run_message_loop(&self) -> Result<()> {
         let poll_ms = self.config.poll_interval;
         let mut shutdown_rx = self.shutdown_rx.clone();
@@ -168,21 +173,79 @@ impl Orchestrator {
             *self.last_timestamp.lock().await = Some(latest);
         }
 
-        // Route each group's messages
+        // Route each channel's messages
         for jid_messages in by_jid.values() {
-            // Use the last message for trigger matching
             if let Some(last_msg) = jid_messages.last() {
                 let route_result = self.router.route_message(last_msg).await?;
-                if route_result.matched {
-                    if let (Some(folder), Some(group_jid)) =
-                        (route_result.group_folder, route_result.group_jid)
-                    {
-                        let session_id = format!("msg-{}", last_msg.timestamp.timestamp_millis());
-                        let ts_str = last_msg.timestamp.to_rfc3339();
+                match route_result.action {
+                    RouteAction::Process => {
+                        if let (Some(folder), Some(_ws_id)) =
+                            (route_result.workspace_folder, route_result.workspace_id)
+                        {
+                            let session_id =
+                                format!("msg-{}", last_msg.timestamp.timestamp_millis());
+                            let ts_str = last_msg.timestamp.to_rfc3339();
 
-                        self.queue
-                            .enqueue_message_check(&group_jid, &folder, &session_id, Some(&ts_str))
-                            .await?;
+                            self.queue
+                                .enqueue_message_check(
+                                    &last_msg.chat_jid,
+                                    &folder,
+                                    &session_id,
+                                    Some(&ts_str),
+                                )
+                                .await?;
+                        }
+                    }
+                    RouteAction::BindToken { token } => {
+                        let token_repo = TokenRepository::new(&self.db);
+                        match token_repo.validate_and_consume(&token).await? {
+                            Some(workspace_id) => {
+                                let binding_repo = BindingRepository::new(&self.db);
+                                binding_repo
+                                    .bind(&last_msg.chat_jid, &workspace_id)
+                                    .await?;
+
+                                // Reload workspace into cache
+                                let ws_repo = WorkspaceRepository::new(&self.db);
+                                if let Some(ws) = ws_repo.get(&workspace_id).await? {
+                                    let ws_name = ws.name.clone();
+                                    self.workspaces
+                                        .lock()
+                                        .await
+                                        .insert(workspace_id, ws);
+
+                                    if let Err(e) = self.router.send_response(
+                                        &last_msg.chat_jid,
+                                        &format!(
+                                            "Bound to workspace \"{}\". You can now send messages to interact with the agent.",
+                                            ws_name
+                                        ),
+                                    ).await {
+                                        warn!(error = %e, "Failed to send bind success response");
+                                    }
+                                }
+                            }
+                            None => {
+                                if let Err(e) = self.router.send_response(
+                                    &last_msg.chat_jid,
+                                    "Invalid or expired token. Run `ngb workspace create <name>` to get a new token.",
+                                ).await {
+                                    warn!(error = %e, "Failed to send bind failure response");
+                                }
+                            }
+                        }
+                    }
+                    RouteAction::Unbound => {
+                        if let Err(e) = self.router.send_response(
+                            &last_msg.chat_jid,
+                            "Welcome to NanoGridBot!\nThis chat is not bound to a workspace.\nRun `ngb workspace create <name>` in CLI, then send the generated token here to bind.",
+                        ).await {
+                            warn!(error = %e, "Failed to send guidance response");
+                        }
+                    }
+                    RouteAction::BuiltinCommand { ref command } => {
+                        self.handle_builtin_command(&last_msg.chat_jid, command)
+                            .await;
                     }
                 }
             }
@@ -191,14 +254,44 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Handle built-in commands.
+    async fn handle_builtin_command(&self, jid: &str, command: &str) {
+        let response = match command {
+            "/status" => {
+                let health = self.get_health_status().await;
+                format!(
+                    "Status: {}\nWorkspaces: {}\nActive containers: {}\nUptime: {:.0}s",
+                    if health.healthy { "healthy" } else { "unhealthy" },
+                    health.registered_groups,
+                    health.active_containers,
+                    health.uptime_seconds,
+                )
+            }
+            "/help" => {
+                "Commands:\n/status - Show system status\n/help - Show this help\n/unbind - Unbind this chat from its workspace".to_string()
+            }
+            "/unbind" => {
+                let binding_repo = BindingRepository::new(&self.db);
+                match binding_repo.unbind(jid).await {
+                    Ok(true) => "Chat unbound from workspace.".to_string(),
+                    Ok(false) => "This chat is not bound to any workspace.".to_string(),
+                    Err(e) => format!("Error: {e}"),
+                }
+            }
+            _ => format!("Unknown command: {command}"),
+        };
+
+        if let Err(e) = self.router.send_response(jid, &response).await {
+            warn!(error = %e, command, "Failed to send command response");
+        }
+    }
+
     /// Stop the orchestrator and all subsystems.
     pub async fn stop(&self) -> Result<()> {
         info!("Stopping orchestrator");
 
-        // Signal shutdown
         let _ = self.shutdown.send(true);
 
-        // Stop subsystems
         {
             let mut scheduler = self.scheduler.lock().await;
             scheduler.stop();
@@ -213,66 +306,66 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// Register a new group.
-    pub async fn register_group(&self, group: RegisteredGroup) -> Result<()> {
-        let repo = GroupRepository::new(&self.db);
-        repo.save_group(&group).await?;
+    /// Register a workspace.
+    pub async fn register_workspace(&self, ws: Workspace) -> Result<()> {
+        let ws_repo = WorkspaceRepository::new(&self.db);
+        ws_repo.save(&ws).await?;
 
-        // Start IPC watcher for this group
-        {
-            let mut ipc = self.ipc_handler.lock().await;
-            ipc.start(std::slice::from_ref(&group.jid));
-        }
+        let id = ws.id.clone();
+        self.workspaces.lock().await.insert(id.clone(), ws);
 
-        let jid = group.jid.clone();
-        self.registered_groups
-            .lock()
-            .await
-            .insert(jid.clone(), group);
-
-        info!(jid, "Group registered");
+        info!(workspace_id = %id, "Workspace registered");
         Ok(())
     }
 
-    /// Unregister a group.
-    pub async fn unregister_group(&self, jid: &str) -> Result<bool> {
-        let repo = GroupRepository::new(&self.db);
-        let deleted = repo.delete_group(jid).await?;
+    /// Unregister a workspace.
+    pub async fn unregister_workspace(&self, workspace_id: &str) -> Result<bool> {
+        let ws_repo = WorkspaceRepository::new(&self.db);
+        let deleted = ws_repo.delete(workspace_id).await?;
 
         if deleted {
-            self.registered_groups.lock().await.remove(jid);
-            info!(jid, "Group unregistered");
+            self.workspaces.lock().await.remove(workspace_id);
+            info!(workspace_id, "Workspace unregistered");
         }
 
         Ok(deleted)
     }
 
-    /// Send a prompt directly to a group's container.
-    pub async fn send_to_group(
+    /// Send a prompt directly to a workspace's container.
+    pub async fn send_to_workspace(
         &self,
-        group_folder: &str,
+        workspace_folder: &str,
         _prompt: &str,
         session_id: &str,
     ) -> Result<()> {
-        // Find the group by folder
-        let groups = self.registered_groups.lock().await;
-        let group = groups
+        let ws_map = self.workspaces.lock().await;
+        let ws = ws_map
             .values()
-            .find(|g| g.folder == group_folder)
-            .ok_or_else(|| NanoGridBotError::Other(format!("Group not found: {group_folder}")))?;
+            .find(|w| w.folder == workspace_folder)
+            .ok_or_else(|| {
+                NanoGridBotError::Other(format!("Workspace not found: {workspace_folder}"))
+            })?;
 
-        let jid = group.jid.clone();
-        drop(groups);
+        let ws_id = ws.id.clone();
+        drop(ws_map);
+
+        // Find a bound JID for this workspace (use workspace_id as fallback)
+        let binding_repo = BindingRepository::new(&self.db);
+        let bindings = binding_repo.get_by_workspace(&ws_id).await?;
+        let jid = bindings
+            .first()
+            .map(|b| b.channel_jid.clone())
+            .unwrap_or_else(|| format!("cli:{workspace_folder}"));
 
         self.queue
-            .enqueue_message_check(&jid, group_folder, session_id, None)
+            .enqueue_message_check(&jid, workspace_folder, session_id, None)
             .await
     }
 
     /// Get the current health status.
     pub async fn get_health_status(&self) -> HealthStatus {
         let healthy = *self.healthy.lock().await;
-        let groups = self.registered_groups.lock().await;
+        let ws_count = self.workspaces.lock().await.len();
         let active_containers = self.queue.get_active_count().await;
         let uptime = self
             .start_time
@@ -285,7 +378,7 @@ impl Orchestrator {
             healthy,
             channels_connected: self.channels.len(),
             channels_total: self.channels.len(),
-            registered_groups: groups.len(),
+            registered_groups: ws_count,
             active_containers,
             pending_tasks: self.queue.get_waiting_count().await,
             uptime_seconds: uptime,
@@ -311,6 +404,7 @@ impl Orchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ngb_db::WorkspaceRepository;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     struct MockChannel {
@@ -354,6 +448,7 @@ mod tests {
             data_dir: base.join("data"),
             store_dir: base.join("store"),
             groups_dir: base.join("groups"),
+            workspaces_dir: base.join("workspaces"),
             db_path: base.join("store/messages.db"),
             whatsapp_session_path: base.join("store/whatsapp_session"),
             openai_api_key: None,
@@ -397,6 +492,17 @@ mod tests {
         }
     }
 
+    fn make_workspace(id: &str, name: &str) -> Workspace {
+        Workspace {
+            id: id.to_string(),
+            name: name.to_string(),
+            owner: "test".to_string(),
+            folder: name.to_string(),
+            shared: false,
+            container_config: None,
+        }
+    }
+
     #[tokio::test]
     async fn orchestrator_new() {
         let db = Arc::new(Database::in_memory().await.unwrap());
@@ -431,69 +537,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_and_unregister_group() {
+    async fn register_and_unregister_workspace() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
         let channels: Vec<Box<dyn ChannelSender>> = vec![];
         let orch = Orchestrator::new(test_config(), db, channels);
 
-        let group = RegisteredGroup {
-            jid: "telegram:123".to_string(),
-            name: "Test".to_string(),
-            folder: "test".to_string(),
-            trigger_pattern: None,
-            container_config: None,
-            requires_trigger: true,
-        };
-
-        orch.register_group(group).await.unwrap();
+        let ws = make_workspace("ws-1", "test-agent");
+        orch.register_workspace(ws).await.unwrap();
         assert_eq!(orch.get_health_status().await.registered_groups, 1);
 
-        let deleted = orch.unregister_group("telegram:123").await.unwrap();
+        let deleted = orch.unregister_workspace("ws-1").await.unwrap();
         assert!(deleted);
         assert_eq!(orch.get_health_status().await.registered_groups, 0);
     }
 
     #[tokio::test]
-    async fn unregister_nonexistent_group() {
+    async fn unregister_nonexistent_workspace() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
         let channels: Vec<Box<dyn ChannelSender>> = vec![];
         let orch = Orchestrator::new(test_config(), db, channels);
 
-        let deleted = orch.unregister_group("nonexistent:999").await.unwrap();
+        let deleted = orch.unregister_workspace("nonexistent").await.unwrap();
         assert!(!deleted);
     }
 
     #[tokio::test]
-    async fn health_status_reflects_groups() {
+    async fn health_status_reflects_workspaces() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
-        // Pre-register groups in DB
-        let repo = GroupRepository::new(&db);
-        repo.save_group(&RegisteredGroup {
-            jid: "tg:1".to_string(),
-            name: "G1".to_string(),
-            folder: "g1".to_string(),
-            trigger_pattern: None,
-            container_config: None,
-            requires_trigger: true,
-        })
-        .await
-        .unwrap();
-        repo.save_group(&RegisteredGroup {
-            jid: "tg:2".to_string(),
-            name: "G2".to_string(),
-            folder: "g2".to_string(),
-            trigger_pattern: None,
-            container_config: None,
-            requires_trigger: false,
-        })
-        .await
-        .unwrap();
+        let ws_repo = WorkspaceRepository::new(&db);
+        ws_repo.save(&make_workspace("ws-1", "agent1")).await.unwrap();
+        ws_repo.save(&make_workspace("ws-2", "agent2")).await.unwrap();
 
         let channels: Vec<Box<dyn ChannelSender>> = vec![];
         let orch = Orchestrator::new(test_config(), db, channels);
@@ -507,39 +586,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_to_group_unknown() {
+    async fn send_to_workspace_unknown() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
         let channels: Vec<Box<dyn ChannelSender>> = vec![];
         let orch = Orchestrator::new(test_config(), db, channels);
 
-        let result = orch.send_to_group("nonexistent", "hello", "s1").await;
+        let result = orch.send_to_workspace("nonexistent", "hello", "s1").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn send_to_registered_group() {
+    async fn send_to_registered_workspace() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
         let channels: Vec<Box<dyn ChannelSender>> = vec![];
         let orch = Orchestrator::new(test_config(), db, channels);
 
-        // Register a group first
-        orch.register_group(RegisteredGroup {
-            jid: "telegram:100".to_string(),
-            name: "Test".to_string(),
-            folder: "test_folder".to_string(),
-            trigger_pattern: None,
-            container_config: None,
-            requires_trigger: false,
-        })
-        .await
-        .unwrap();
+        orch.register_workspace(make_workspace("ws-1", "test_folder"))
+            .await
+            .unwrap();
 
-        // send_to_group should succeed (the container will fail, but that's expected)
-        let result = orch.send_to_group("test_folder", "hello", "s1").await;
+        let result = orch.send_to_workspace("test_folder", "hello", "s1").await;
         assert!(result.is_ok());
     }
 
@@ -570,7 +640,6 @@ mod tests {
         let channels: Vec<Box<dyn ChannelSender>> = vec![];
         let orch = Orchestrator::new(test_config(), db, channels);
 
-        // Should not error on empty DB
         let result = orch.poll_messages().await;
         assert!(result.is_ok());
     }

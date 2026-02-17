@@ -13,6 +13,7 @@ pub mod mount_security;
 pub mod orchestrator;
 pub mod router;
 pub mod task_scheduler;
+pub mod workspace_queue;
 
 pub use formatting::{
     escape_xml, format_messages_xml, format_output_xml, parse_input_json, serialize_output,
@@ -33,7 +34,8 @@ pub use container_runner::{
 pub use container_session::ContainerSession;
 pub use group_queue::GroupQueue;
 pub use ipc_handler::{ChannelSender, IpcHandler};
-pub use mount_security::{get_allowed_mount_paths, validate_group_mounts, MountMode, MountSpec};
+pub use mount_security::{get_allowed_mount_paths, validate_workspace_mounts, MountMode, MountSpec};
 pub use orchestrator::{HealthStatus, Orchestrator};
-pub use router::{format_messages, MessageRouter, RouteResult};
+pub use router::{format_messages, MessageRouter, RouteAction, RouteResult};
 pub use task_scheduler::{calculate_next_run, TaskScheduler};
+pub use workspace_queue::WorkspaceQueue;

@@ -63,7 +63,7 @@ pub fn get_allowed_mount_paths(config: &Config) -> Vec<PathBuf> {
 /// - If `is_main`: `{base_dir}`    → `/workspace/project` (ro)
 ///
 /// Additional mounts come from `ContainerConfig::additional_mounts`.
-pub fn validate_group_mounts(
+pub fn validate_workspace_mounts(
     group_folder: &str,
     chat_jid: &str,
     is_main: bool,
@@ -180,6 +180,7 @@ mod tests {
             data_dir: base.join("data"),
             store_dir: base.join("store"),
             groups_dir: base.join("groups"),
+            workspaces_dir: base.join("workspaces"),
             db_path: base.join("store/messages.db"),
             whatsapp_session_path: base.join("store/whatsapp_session"),
             openai_api_key: None,
@@ -226,7 +227,7 @@ mod tests {
     #[test]
     fn standard_mounts_non_main() {
         let cfg = test_config();
-        let mounts = validate_group_mounts("my_group", "telegram:123", false, &[], &cfg).unwrap();
+        let mounts = validate_workspace_mounts("my_group", "telegram:123", false, &[], &cfg).unwrap();
         assert_eq!(mounts.len(), 4);
         assert_eq!(mounts[0].container_path, "/workspace/group");
         assert_eq!(mounts[0].mode, MountMode::ReadWrite);
@@ -237,7 +238,7 @@ mod tests {
     #[test]
     fn standard_mounts_main_includes_project() {
         let cfg = test_config();
-        let mounts = validate_group_mounts("g1", "slack:C1", true, &[], &cfg).unwrap();
+        let mounts = validate_workspace_mounts("g1", "slack:C1", true, &[], &cfg).unwrap();
         assert_eq!(mounts.len(), 5);
         assert_eq!(mounts[4].container_path, "/workspace/project");
         assert_eq!(mounts[4].mode, MountMode::ReadOnly);
@@ -257,7 +258,7 @@ mod tests {
         );
         extra.insert("mode".to_string(), serde_json::json!("rw"));
 
-        let mounts = validate_group_mounts("g1", "tg:1", false, &[extra], &cfg).unwrap();
+        let mounts = validate_workspace_mounts("g1", "tg:1", false, &[extra], &cfg).unwrap();
         assert_eq!(mounts.len(), 5);
         assert_eq!(mounts[4].container_path, "/workspace/custom");
         assert_eq!(mounts[4].mode, MountMode::ReadWrite);
@@ -273,7 +274,7 @@ mod tests {
             serde_json::json!("/workspace/bad"),
         );
 
-        let result = validate_group_mounts("g1", "tg:1", false, &[extra], &cfg);
+        let result = validate_workspace_mounts("g1", "tg:1", false, &[extra], &cfg);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("not in allowed list"));
@@ -292,7 +293,7 @@ mod tests {
             serde_json::json!("/workspace/exploit"),
         );
 
-        let result = validate_group_mounts("g1", "tg:1", false, &[extra], &cfg);
+        let result = validate_workspace_mounts("g1", "tg:1", false, &[extra], &cfg);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("traversal"));

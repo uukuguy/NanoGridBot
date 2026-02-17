@@ -17,6 +17,7 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub store_dir: PathBuf,
     pub groups_dir: PathBuf,
+    pub workspaces_dir: PathBuf,
     pub db_path: PathBuf,
     pub whatsapp_session_path: PathBuf,
 
@@ -102,6 +103,7 @@ impl Config {
         let data_dir = env_path_or("DATA_DIR", || base.join("data"));
         let store_dir = env_path_or("STORE_DIR", || base.join("store"));
         let groups_dir = env_path_or("GROUPS_DIR", || base.join("groups"));
+        let workspaces_dir = env_path_or("WORKSPACES_DIR", || base.join("workspaces"));
 
         let config = Config {
             project_name: env_or("PROJECT_NAME", || "NanoGridBot".to_string()),
@@ -112,6 +114,7 @@ impl Config {
             data_dir: data_dir.clone(),
             store_dir: store_dir.clone(),
             groups_dir: groups_dir.clone(),
+            workspaces_dir: workspaces_dir.clone(),
             db_path: env_path_or("DB_PATH", || store_dir.join("messages.db")),
             whatsapp_session_path: env_path_or("WHATSAPP_SESSION_PATH", || {
                 store_dir.join("whatsapp_session")
@@ -180,6 +183,7 @@ impl Config {
             self.data_dir.clone(),
             self.store_dir.clone(),
             self.groups_dir.clone(),
+            self.workspaces_dir.clone(),
             self.data_dir.join("ipc"),
             self.data_dir.join("sessions"),
             self.data_dir.join("env"),
@@ -408,6 +412,7 @@ mod tests {
             data_dir: base.join("data"),
             store_dir: base.join("store"),
             groups_dir: base.join("groups"),
+            workspaces_dir: base.join("workspaces"),
             db_path: base.join("store/messages.db"),
             whatsapp_session_path: base.join("store/whatsapp_session"),
             openai_api_key: None,

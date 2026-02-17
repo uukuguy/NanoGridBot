@@ -191,7 +191,51 @@ impl Database {
         .await
         .map_err(|e| NanoGridBotError::Database(format!("Create sessions table: {e}")))?;
 
-        info!("Database schema initialized (6 tables, 5 indexes)");
+        // Workspaces table
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS workspaces (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                owner TEXT NOT NULL DEFAULT '',
+                folder TEXT NOT NULL,
+                shared INTEGER NOT NULL DEFAULT 0,
+                container_config TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| NanoGridBotError::Database(format!("Create workspaces table: {e}")))?;
+
+        // Channel bindings table
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS channel_bindings (
+                channel_jid TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                bound_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            NanoGridBotError::Database(format!("Create channel_bindings table: {e}"))
+        })?;
+
+        // Access tokens table
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS access_tokens (
+                token TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                expires_at TEXT,
+                used INTEGER NOT NULL DEFAULT 0
+            )",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| NanoGridBotError::Database(format!("Create access_tokens table: {e}")))?;
+
+        info!("Database schema initialized (9 tables, 5 indexes)");
         Ok(())
     }
 
@@ -248,6 +292,24 @@ mod tests {
         assert_eq!(row.0, 0);
 
         let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sessions")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.0, 0);
+
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM workspaces")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.0, 0);
+
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM channel_bindings")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(row.0, 0);
+
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM access_tokens")
             .fetch_one(db.pool())
             .await
             .unwrap();

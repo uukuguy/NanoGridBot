@@ -16,7 +16,7 @@ use ngb_types::{NanoGridBotError, RegisteredGroup, Result, ScheduledTask};
 use tracing::{debug, info};
 
 /// Ensure the group workspace and IPC directories exist.
-pub fn ensure_group_dirs(config: &Config, group_folder: &str) -> Result<PathBuf> {
+pub fn ensure_workspace_dirs(config: &Config, group_folder: &str) -> Result<PathBuf> {
     let group_dir = config.groups_dir.join(group_folder);
     std::fs::create_dir_all(&group_dir).map_err(|e| {
         NanoGridBotError::Container(format!(
@@ -167,7 +167,7 @@ pub fn write_tasks_snapshot(
 }
 
 /// Write a snapshot of available groups to the IPC directory.
-pub fn write_groups_snapshot(
+pub fn write_workspaces_snapshot(
     ipc_dir: &Path,
     group_folder: &str,
     is_main: bool,
@@ -224,7 +224,7 @@ pub fn prepare_container_launch(
     groups: &[RegisteredGroup],
 ) -> Result<HashMap<String, String>> {
     // 1. Ensure directories
-    ensure_group_dirs(config, group_folder)?;
+    ensure_workspace_dirs(config, group_folder)?;
 
     // 2. Init settings.json
     let sessions_dir = config.data_dir.join("sessions");
@@ -239,7 +239,7 @@ pub fn prepare_container_launch(
     write_tasks_snapshot(&ipc_dir, group_folder, is_main, tasks)?;
 
     // 5. Write groups snapshot
-    write_groups_snapshot(&ipc_dir, group_folder, is_main, groups)?;
+    write_workspaces_snapshot(&ipc_dir, group_folder, is_main, groups)?;
 
     // 6. Filter env vars
     let env = filter_env_vars(config);
@@ -268,6 +268,7 @@ mod tests {
             data_dir: base.join("data"),
             store_dir: base.join("store"),
             groups_dir: base.join("groups"),
+            workspaces_dir: base.join("workspaces"),
             db_path: base.join("store/messages.db"),
             whatsapp_session_path: base.join("store/whatsapp_session"),
             openai_api_key: Some("sk-test-openai".to_string()),
@@ -312,11 +313,11 @@ mod tests {
     }
 
     #[test]
-    fn ensure_group_dirs_creates_all() {
+    fn ensure_workspace_dirs_creates_all() {
         let tmp = TempDir::new().unwrap();
         let config = test_config(tmp.path());
 
-        let group_dir = ensure_group_dirs(&config, "test-group").unwrap();
+        let group_dir = ensure_workspace_dirs(&config, "test-group").unwrap();
         assert!(group_dir.exists());
         assert!(config.data_dir.join("sessions/test-group/.claude").exists());
         assert!(config.data_dir.join("ipc/test-group/messages").exists());

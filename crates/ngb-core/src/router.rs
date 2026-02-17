@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
 use ngb_config::Config;
-use ngb_db::{Database, GroupRepository};
+use ngb_db::{BindingRepository, Database, WorkspaceRepository};
 use ngb_types::{Message, NanoGridBotError, Result};
-use regex::Regex;
 use tracing::{debug, error, info, warn};
 
 use crate::ipc_handler::ChannelSender;
@@ -23,7 +22,10 @@ pub fn format_messages(messages: &[Message]) -> String {
         .join("\n")
 }
 
-/// Message router that matches incoming messages against group triggers
+/// Token prefix used for workspace binding tokens.
+const TOKEN_PREFIX: &str = "ngb-";
+
+/// Message router that looks up channel bindings to find the target workspace,
 /// and dispatches responses to the appropriate channels.
 pub struct MessageRouter {
     config: Config,
@@ -31,15 +33,28 @@ pub struct MessageRouter {
     channels: Arc<Vec<Box<dyn ChannelSender>>>,
 }
 
+/// Action determined by routing a message.
+#[derive(Debug, PartialEq)]
+pub enum RouteAction {
+    /// Route to workspace container for processing.
+    Process,
+    /// Token binding request from IM.
+    BindToken { token: String },
+    /// Built-in command (e.g. /status).
+    BuiltinCommand { command: String },
+    /// Channel is not bound to any workspace — send guidance.
+    Unbound,
+}
+
 /// Result of routing a message.
 #[derive(Debug)]
 pub struct RouteResult {
-    /// Whether the message matched a trigger.
-    pub matched: bool,
-    /// The group folder the message was routed to (if matched).
-    pub group_folder: Option<String>,
-    /// The group JID.
-    pub group_jid: Option<String>,
+    /// The action to take.
+    pub action: RouteAction,
+    /// The workspace ID (if bound).
+    pub workspace_id: Option<String>,
+    /// The workspace folder (if bound).
+    pub workspace_folder: Option<String>,
 }
 
 impl MessageRouter {
@@ -56,66 +71,87 @@ impl MessageRouter {
         }
     }
 
-    /// Route an incoming message to the appropriate group.
+    /// Route an incoming message.
     ///
-    /// Returns a `RouteResult` indicating whether the message was matched.
-    /// A message matches if:
-    /// 1. The group has `requires_trigger == false`, OR
-    /// 2. The message content matches the group's trigger pattern.
+    /// Two-step lookup:
+    /// 1. Check if message is a token or built-in command → special action
+    /// 2. Look up channel_bindings → route to workspace or return Unbound
     pub async fn route_message(&self, message: &Message) -> Result<RouteResult> {
-        let repo = GroupRepository::new(&self.db);
-        let groups = repo.get_all().await?;
+        let content = message.content.trim();
 
-        for group in &groups {
-            // Check if this group handles this JID
-            if group.jid != message.chat_jid {
-                continue;
-            }
-
-            // Check trigger
-            if group.requires_trigger {
-                let pattern = self.build_trigger_pattern(&group.trigger_pattern);
-                if !matches_trigger(&pattern, &message.content) {
-                    debug!(
-                        jid = %message.chat_jid,
-                        content_prefix = &message.content[..message.content.len().min(50)],
-                        "Message did not match trigger"
-                    );
-                    return Ok(RouteResult {
-                        matched: false,
-                        group_folder: None,
-                        group_jid: None,
-                    });
-                }
-            }
-
-            info!(
-                jid = %message.chat_jid,
-                group = %group.name,
-                folder = %group.folder,
-                "Message routed to group"
-            );
-
+        // Check for token binding request
+        if content.starts_with(TOKEN_PREFIX) && content.len() <= 20 && !content.contains(' ') {
+            debug!(jid = %message.chat_jid, "Token binding request detected");
             return Ok(RouteResult {
-                matched: true,
-                group_folder: Some(group.folder.clone()),
-                group_jid: Some(group.jid.clone()),
+                action: RouteAction::BindToken {
+                    token: content.to_string(),
+                },
+                workspace_id: None,
+                workspace_folder: None,
             });
         }
 
-        // No group found — auto-register for this JID
-        let folder = self.auto_register_group(&message.chat_jid).await?;
-        info!(
-            jid = %message.chat_jid,
-            folder = %folder,
-            "Auto-registered new group for unknown JID"
-        );
+        // Check for built-in commands
+        if content.starts_with('/') {
+            let command = content.split_whitespace().next().unwrap_or(content);
+            match command {
+                "/status" | "/help" | "/unbind" => {
+                    debug!(jid = %message.chat_jid, command, "Built-in command detected");
+                    return Ok(RouteResult {
+                        action: RouteAction::BuiltinCommand {
+                            command: command.to_string(),
+                        },
+                        workspace_id: None,
+                        workspace_folder: None,
+                    });
+                }
+                _ => {} // Not a built-in command, fall through to binding lookup
+            }
+        }
 
-        Ok(RouteResult {
-            matched: true,
-            group_folder: Some(folder),
-            group_jid: Some(message.chat_jid.clone()),
-        })
+        // Look up channel binding
+        let binding_repo = BindingRepository::new(&self.db);
+        match binding_repo.get_by_jid(&message.chat_jid).await? {
+            Some(binding) => {
+                // Found binding — look up workspace
+                let ws_repo = WorkspaceRepository::new(&self.db);
+                match ws_repo.get(&binding.workspace_id).await? {
+                    Some(ws) => {
+                        info!(
+                            jid = %message.chat_jid,
+                            workspace = %ws.name,
+                            folder = %ws.folder,
+                            "Message routed to workspace"
+                        );
+                        Ok(RouteResult {
+                            action: RouteAction::Process,
+                            workspace_id: Some(ws.id),
+                            workspace_folder: Some(ws.folder),
+                        })
+                    }
+                    None => {
+                        warn!(
+                            jid = %message.chat_jid,
+                            workspace_id = %binding.workspace_id,
+                            "Binding references non-existent workspace, treating as unbound"
+                        );
+                        Ok(RouteResult {
+                            action: RouteAction::Unbound,
+                            workspace_id: None,
+                            workspace_folder: None,
+                        })
+                    }
+                }
+            }
+            None => {
+                debug!(jid = %message.chat_jid, "No binding found, channel is unbound");
+                Ok(RouteResult {
+                    action: RouteAction::Unbound,
+                    workspace_id: None,
+                    workspace_folder: None,
+                })
+            }
+        }
     }
 
     /// Send a response message to a specific JID via the appropriate channel.
@@ -134,27 +170,27 @@ impl MessageRouter {
         )))
     }
 
-    /// Broadcast a text message to multiple groups.
-    pub async fn broadcast_to_groups(
+    /// Broadcast a text message to multiple workspaces via their bound channels.
+    pub async fn broadcast_to_workspaces(
         &self,
         text: &str,
-        group_folders: &[String],
+        workspace_ids: &[String],
     ) -> Result<Vec<String>> {
-        let repo = GroupRepository::new(&self.db);
-        let all_groups = repo.get_all().await?;
+        let binding_repo = BindingRepository::new(&self.db);
         let mut sent_to = Vec::new();
 
-        for group in &all_groups {
-            if group_folders.contains(&group.folder) {
-                match self.send_response(&group.jid, text).await {
+        for ws_id in workspace_ids {
+            let bindings = binding_repo.get_by_workspace(ws_id).await?;
+            for binding in &bindings {
+                match self.send_response(&binding.channel_jid, text).await {
                     Ok(()) => {
-                        sent_to.push(group.jid.clone());
+                        sent_to.push(binding.channel_jid.clone());
                     }
                     Err(e) => {
                         error!(
-                            jid = %group.jid,
+                            jid = %binding.channel_jid,
                             error = %e,
-                            "Failed to broadcast to group"
+                            "Failed to broadcast to channel"
                         );
                     }
                 }
@@ -163,77 +199,15 @@ impl MessageRouter {
 
         info!(
             count = sent_to.len(),
-            total = group_folders.len(),
+            total = workspace_ids.len(),
             "Broadcast completed"
         );
         Ok(sent_to)
     }
 
-    /// Build the trigger regex pattern.
-    ///
-    /// If the group has a custom trigger_pattern, use that.
-    /// Otherwise, default to `^@{assistant_name}\b` (case-insensitive).
-    fn build_trigger_pattern(&self, custom_pattern: &Option<String>) -> String {
-        match custom_pattern {
-            Some(pattern) if !pattern.is_empty() => pattern.clone(),
-            _ => format!(r"(?i)^@{}\b", regex::escape(&self.config.assistant_name)),
-        }
-    }
-
-    /// Auto-register a group for an unknown JID.
-    ///
-    /// Derives a folder name from the JID (e.g. `telegram:123` → `tg_123`)
-    /// and creates the group directory with a default CLAUDE.md if needed.
-    /// The group is registered with `requires_trigger: false` so all messages
-    /// are processed without needing a trigger keyword.
-    async fn auto_register_group(&self, jid: &str) -> Result<String> {
-        // Derive folder name: "telegram:123" → "tg_123", "slack:C1" → "slack_C1"
-        let folder = jid
-            .replace("telegram:", "tg_")
-            .replace(':', "_")
-            .replace('-', "_");
-
-        let group = ngb_types::RegisteredGroup {
-            jid: jid.to_string(),
-            name: folder.clone(),
-            folder: folder.clone(),
-            trigger_pattern: None,
-            container_config: None,
-            requires_trigger: false,
-        };
-
-        let repo = GroupRepository::new(&self.db);
-        repo.save_group(&group).await?;
-
-        // Create group directory and default CLAUDE.md
-        let group_dir = self.config.groups_dir.join(&folder);
-        if let Err(e) = std::fs::create_dir_all(&group_dir) {
-            warn!(path = %group_dir.display(), error = %e, "Failed to create group directory");
-        } else if !group_dir.join("CLAUDE.md").exists() {
-            let default_instructions = format!(
-                "# {} Agent Instructions\n\n\
-                 You are a helpful AI assistant named {}.\n\
-                 Respond concisely and helpfully.\n",
-                self.config.project_name, self.config.assistant_name
-            );
-            if let Err(e) = std::fs::write(group_dir.join("CLAUDE.md"), default_instructions) {
-                warn!(error = %e, "Failed to write default CLAUDE.md");
-            }
-        }
-
-        info!(jid, folder = %folder, "Group auto-registered");
-        Ok(folder)
-    }
-}
-
-/// Check if message content matches a trigger regex.
-fn matches_trigger(pattern: &str, content: &str) -> bool {
-    match Regex::new(pattern) {
-        Ok(re) => re.is_match(content),
-        Err(e) => {
-            warn!(pattern, error = %e, "Invalid trigger regex, defaulting to no match");
-            false
-        }
+    /// Get a reference to the config.
+    pub fn config(&self) -> &Config {
+        &self.config
     }
 }
 
@@ -241,8 +215,8 @@ fn matches_trigger(pattern: &str, content: &str) -> bool {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
-    use ngb_db::GroupRepository;
-    use ngb_types::{MessageRole, RegisteredGroup};
+    use ngb_db::{BindingRepository, WorkspaceRepository};
+    use ngb_types::{MessageRole, Workspace};
     use std::sync::atomic::{AtomicU32, Ordering};
 
     struct MockChannel {
@@ -286,6 +260,7 @@ mod tests {
             data_dir: base.join("data"),
             store_dir: base.join("store"),
             groups_dir: base.join("groups"),
+            workspaces_dir: base.join("workspaces"),
             db_path: base.join("store/messages.db"),
             whatsapp_session_path: base.join("store/whatsapp_session"),
             openai_api_key: None,
@@ -342,104 +317,122 @@ mod tests {
         }
     }
 
-    #[test]
-    fn trigger_default_pattern() {
-        assert!(matches_trigger(r"(?i)^@Andy\b", "@Andy hello"));
-        assert!(matches_trigger(r"(?i)^@Andy\b", "@andy help me"));
-        assert!(!matches_trigger(r"(?i)^@Andy\b", "hello @Andy"));
-        assert!(!matches_trigger(r"(?i)^@Andy\b", "random message"));
-    }
-
-    #[test]
-    fn trigger_custom_pattern() {
-        assert!(matches_trigger(r"^!bot\b", "!bot do something"));
-        assert!(!matches_trigger(r"^!bot\b", "hello !bot"));
-    }
-
-    #[test]
-    fn trigger_invalid_regex() {
-        assert!(!matches_trigger(r"[invalid", "test"));
+    fn make_workspace(id: &str, name: &str) -> Workspace {
+        Workspace {
+            id: id.to_string(),
+            name: name.to_string(),
+            owner: "test-user".to_string(),
+            folder: name.to_string(),
+            shared: false,
+            container_config: None,
+        }
     }
 
     #[tokio::test]
-    async fn route_message_with_trigger() {
+    async fn route_bound_channel() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
-        // Register a group
-        let repo = GroupRepository::new(&db);
-        repo.save_group(&RegisteredGroup {
-            jid: "telegram:123".to_string(),
-            name: "Test Group".to_string(),
-            folder: "test_group".to_string(),
-            trigger_pattern: None,
-            container_config: None,
-            requires_trigger: true,
-        })
-        .await
-        .unwrap();
-
-        let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
-        let cfg = test_config();
-        let router = MessageRouter::new(cfg, db, channels);
-
-        // Should match — default trigger @Andy
-        let msg = make_message("telegram:123", "@Andy what's up?");
-        let result = router.route_message(&msg).await.unwrap();
-        assert!(result.matched);
-        assert_eq!(result.group_folder, Some("test_group".to_string()));
-
-        // Should NOT match
-        let msg2 = make_message("telegram:123", "hello everyone");
-        let result2 = router.route_message(&msg2).await.unwrap();
-        assert!(!result2.matched);
-    }
-
-    #[tokio::test]
-    async fn route_message_no_trigger_required() {
-        let db = Arc::new(Database::in_memory().await.unwrap());
-        db.initialize().await.unwrap();
-
-        let repo = GroupRepository::new(&db);
-        repo.save_group(&RegisteredGroup {
-            jid: "slack:C1".to_string(),
-            name: "Open Group".to_string(),
-            folder: "open_group".to_string(),
-            trigger_pattern: None,
-            container_config: None,
-            requires_trigger: false,
-        })
-        .await
-        .unwrap();
+        // Create workspace and binding
+        let ws_repo = WorkspaceRepository::new(&db);
+        ws_repo.save(&make_workspace("ws-1", "my-agent")).await.unwrap();
+        let binding_repo = BindingRepository::new(&db);
+        binding_repo.bind("telegram:123", "ws-1").await.unwrap();
 
         let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
         let router = MessageRouter::new(test_config(), db, channels);
 
-        let msg = make_message("slack:C1", "any message");
+        let msg = make_message("telegram:123", "hello agent");
         let result = router.route_message(&msg).await.unwrap();
-        assert!(result.matched);
+        assert_eq!(result.action, RouteAction::Process);
+        assert_eq!(result.workspace_id, Some("ws-1".to_string()));
+        assert_eq!(result.workspace_folder, Some("my-agent".to_string()));
     }
 
     #[tokio::test]
-    async fn route_message_unknown_jid_auto_registers() {
+    async fn route_unbound_channel() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
         let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
-        let router = MessageRouter::new(test_config(), db.clone(), channels);
+        let router = MessageRouter::new(test_config(), db, channels);
 
-        let msg = make_message("unknown:999", "hello");
+        let msg = make_message("telegram:999", "hello");
         let result = router.route_message(&msg).await.unwrap();
-        // Auto-registration: unknown JID gets a new group
-        assert!(result.matched);
-        assert_eq!(result.group_folder, Some("unknown_999".to_string()));
-        assert_eq!(result.group_jid, Some("unknown:999".to_string()));
+        assert_eq!(result.action, RouteAction::Unbound);
+        assert!(result.workspace_id.is_none());
+    }
 
-        // Verify group was persisted
-        let repo = GroupRepository::new(&db);
-        let group = repo.get_group("unknown:999").await.unwrap();
-        assert!(group.is_some());
-        assert!(!group.unwrap().requires_trigger);
+    #[tokio::test]
+    async fn route_token_binding() {
+        let db = Arc::new(Database::in_memory().await.unwrap());
+        db.initialize().await.unwrap();
+
+        let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
+        let router = MessageRouter::new(test_config(), db, channels);
+
+        let msg = make_message("telegram:123", "ngb-a1b2c3d4e5f6");
+        let result = router.route_message(&msg).await.unwrap();
+        assert_eq!(
+            result.action,
+            RouteAction::BindToken {
+                token: "ngb-a1b2c3d4e5f6".to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn route_builtin_command() {
+        let db = Arc::new(Database::in_memory().await.unwrap());
+        db.initialize().await.unwrap();
+
+        let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
+        let router = MessageRouter::new(test_config(), db, channels);
+
+        let msg = make_message("telegram:123", "/status");
+        let result = router.route_message(&msg).await.unwrap();
+        assert_eq!(
+            result.action,
+            RouteAction::BuiltinCommand {
+                command: "/status".to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn route_unknown_slash_command_falls_through() {
+        let db = Arc::new(Database::in_memory().await.unwrap());
+        db.initialize().await.unwrap();
+
+        // Bind the channel so it routes to Process
+        let ws_repo = WorkspaceRepository::new(&db);
+        ws_repo.save(&make_workspace("ws-1", "agent")).await.unwrap();
+        let binding_repo = BindingRepository::new(&db);
+        binding_repo.bind("telegram:123", "ws-1").await.unwrap();
+
+        let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
+        let router = MessageRouter::new(test_config(), db, channels);
+
+        let msg = make_message("telegram:123", "/custom-command arg1");
+        let result = router.route_message(&msg).await.unwrap();
+        assert_eq!(result.action, RouteAction::Process);
+    }
+
+    #[tokio::test]
+    async fn route_stale_binding() {
+        let db = Arc::new(Database::in_memory().await.unwrap());
+        db.initialize().await.unwrap();
+
+        // Create binding without workspace
+        let binding_repo = BindingRepository::new(&db);
+        binding_repo.bind("telegram:123", "ws-deleted").await.unwrap();
+
+        let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
+        let router = MessageRouter::new(test_config(), db, channels);
+
+        let msg = make_message("telegram:123", "hello");
+        let result = router.route_message(&msg).await.unwrap();
+        assert_eq!(result.action, RouteAction::Unbound);
     }
 
     #[tokio::test]

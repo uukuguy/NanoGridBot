@@ -8,7 +8,7 @@ use serde_json::json;
 use tokio::process::Command;
 use tracing::{debug, error, info, warn};
 
-use crate::mount_security::validate_group_mounts;
+use crate::mount_security::validate_workspace_mounts;
 
 /// Marker written by the agent container to delimit its JSON output.
 pub const OUTPUT_START_MARKER: &str = "---NGB_OUTPUT_START---";
@@ -103,7 +103,7 @@ async fn run_container_inner(
     config: &Config,
 ) -> Result<ContainerOutput> {
     // Validate mounts
-    let mounts = validate_group_mounts(group_folder, chat_jid, is_main, additional_mounts, config)?;
+    let mounts = validate_workspace_mounts(group_folder, chat_jid, is_main, additional_mounts, config)?;
 
     // Build the docker command
     let args = build_docker_args(group_folder, &mounts, env, config);
@@ -421,6 +421,7 @@ mod tests {
             data_dir: base.join("data"),
             store_dir: base.join("store"),
             groups_dir: base.join("groups"),
+            workspaces_dir: base.join("workspaces"),
             db_path: base.join("store/messages.db"),
             whatsapp_session_path: base.join("store/whatsapp_session"),
             openai_api_key: None,

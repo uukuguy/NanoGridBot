@@ -12,15 +12,15 @@ use crate::container_runner::run_container_agent;
 /// Maximum number of retry attempts per group.
 const MAX_RETRIES: u32 = 5;
 
-/// Per-group processing state.
+/// Per-workspace processing state.
 #[derive(Debug)]
-struct GroupState {
+struct WorkspaceState {
     #[allow(dead_code)]
     jid: String,
     active: bool,
     pending_messages: VecDeque<PendingMessage>,
     pending_tasks: VecDeque<ScheduledTask>,
-    group_folder: String,
+    workspace_folder: String,
     retry_count: u32,
 }
 
@@ -31,31 +31,31 @@ struct PendingMessage {
     last_timestamp: Option<String>,
 }
 
-/// Concurrent group processing queue with state machine, retry, and priority.
+/// Concurrent workspace processing queue with state machine, retry, and priority.
 ///
-/// Manages which groups are actively running containers and queues overflow.
+/// Manages which workspaces are actively running containers and queues overflow.
 /// Concurrency is capped at `container_max_concurrent`.
-pub struct GroupQueue {
+pub struct WorkspaceQueue {
     inner: Arc<Mutex<QueueInner>>,
     config: Config,
     db: Arc<Database>,
 }
 
 struct QueueInner {
-    states: HashMap<String, GroupState>,
+    states: HashMap<String, WorkspaceState>,
     active_count: usize,
-    waiting_groups: VecDeque<String>,
+    waiting_workspaces: VecDeque<String>,
     max_concurrent: usize,
 }
 
-/// Ensure a GroupState entry exists for the given JID.
-fn ensure_state(states: &mut HashMap<String, GroupState>, jid: &str, group_folder: &str) {
-    states.entry(jid.to_string()).or_insert_with(|| GroupState {
+/// Ensure a WorkspaceState entry exists for the given JID.
+fn ensure_state(states: &mut HashMap<String, WorkspaceState>, jid: &str, workspace_folder: &str) {
+    states.entry(jid.to_string()).or_insert_with(|| WorkspaceState {
         jid: jid.to_string(),
         active: false,
         pending_messages: VecDeque::new(),
         pending_tasks: VecDeque::new(),
-        group_folder: group_folder.to_string(),
+        workspace_folder: workspace_folder.to_string(),
         retry_count: 0,
     });
 }
@@ -69,23 +69,23 @@ fn try_activate(inner: &mut QueueInner, jid: &str) -> bool {
         state.active = true;
         inner.active_count += 1;
         true
-    } else if !state.active && !inner.waiting_groups.contains(&jid.to_string()) {
-        inner.waiting_groups.push_back(jid.to_string());
+    } else if !state.active && !inner.waiting_workspaces.contains(&jid.to_string()) {
+        inner.waiting_workspaces.push_back(jid.to_string());
         false
     } else {
         false
     }
 }
 
-impl GroupQueue {
-    /// Create a new group queue.
+impl WorkspaceQueue {
+    /// Create a new workspace queue.
     pub fn new(config: Config, db: Arc<Database>) -> Self {
         let max_concurrent = config.container_max_concurrent;
         Self {
             inner: Arc::new(Mutex::new(QueueInner {
                 states: HashMap::new(),
                 active_count: 0,
-                waiting_groups: VecDeque::new(),
+                waiting_workspaces: VecDeque::new(),
                 max_concurrent,
             })),
             config,
@@ -100,13 +100,13 @@ impl GroupQueue {
     pub async fn enqueue_message_check(
         &self,
         jid: &str,
-        group_folder: &str,
+        workspace_folder: &str,
         session_id: &str,
         last_timestamp: Option<&str>,
     ) -> Result<()> {
         let should_start = {
             let mut inner = self.inner.lock().await;
-            ensure_state(&mut inner.states, jid, group_folder);
+            ensure_state(&mut inner.states, jid, workspace_folder);
             let state = inner.states.get_mut(jid).unwrap();
 
             state.pending_messages.push_back(PendingMessage {
@@ -119,7 +119,7 @@ impl GroupQueue {
         // Lock is dropped here
 
         if should_start {
-            self.process_group(jid.to_string()).await;
+            self.process_workspace(jid.to_string()).await;
         }
 
         Ok(())
@@ -131,13 +131,13 @@ impl GroupQueue {
     pub async fn enqueue_task(
         &self,
         jid: &str,
-        group_folder: &str,
+        workspace_folder: &str,
         task: ScheduledTask,
         session_id: &str,
     ) -> Result<()> {
         let should_start = {
             let mut inner = self.inner.lock().await;
-            ensure_state(&mut inner.states, jid, group_folder);
+            ensure_state(&mut inner.states, jid, workspace_folder);
             let state = inner.states.get_mut(jid).unwrap();
 
             state.pending_tasks.push_back(task);
@@ -154,7 +154,7 @@ impl GroupQueue {
         };
 
         if should_start {
-            self.process_group(jid.to_string()).await;
+            self.process_workspace(jid.to_string()).await;
         }
 
         Ok(())
@@ -167,14 +167,14 @@ impl GroupQueue {
 
     /// Get the number of groups waiting for a slot.
     pub async fn get_waiting_count(&self) -> usize {
-        self.inner.lock().await.waiting_groups.len()
+        self.inner.lock().await.waiting_workspaces.len()
     }
 
-    /// Process a group: drain tasks first, then messages.
+    /// Process a workspace: drain tasks first, then messages.
     ///
     /// Uses `tokio::spawn` internally to avoid holding the Mutex during
     /// container execution.
-    async fn process_group(&self, jid: String) {
+    async fn process_workspace(&self, jid: String) {
         let inner = self.inner.clone();
         let config = self.config.clone();
         let db = self.db.clone();
@@ -198,12 +198,12 @@ impl GroupQueue {
                             .unwrap_or_else(|| "default".to_string());
                         Some(WorkItem::Task {
                             task,
-                            group_folder: state.group_folder.clone(),
+                            workspace_folder: state.workspace_folder.clone(),
                             session_id,
                         })
                     } else if let Some(msg) = state.pending_messages.pop_front() {
                         Some(WorkItem::Message {
-                            group_folder: state.group_folder.clone(),
+                            workspace_folder: state.workspace_folder.clone(),
                             session_id: msg.session_id,
                             last_timestamp: msg.last_timestamp,
                         })
@@ -216,12 +216,12 @@ impl GroupQueue {
                 match work {
                     Some(WorkItem::Task {
                         task,
-                        group_folder,
+                        workspace_folder,
                         session_id,
                     }) => {
                         debug!(jid = %jid, prompt = %task.prompt, "Processing scheduled task");
                         let result = run_container_agent(
-                            &group_folder,
+                            &workspace_folder,
                             &task.prompt,
                             &session_id,
                             &jid,
@@ -237,7 +237,7 @@ impl GroupQueue {
                         handle_result(&inner, &jid, result.is_ok()).await;
                     }
                     Some(WorkItem::Message {
-                        group_folder,
+                        workspace_folder,
                         session_id,
                         last_timestamp,
                     }) => {
@@ -250,7 +250,7 @@ impl GroupQueue {
                         );
                         debug!(jid = %jid, "Processing message check");
                         let result = run_container_agent(
-                            &group_folder,
+                            &workspace_folder,
                             &prompt,
                             &session_id,
                             &jid,
@@ -274,8 +274,8 @@ impl GroupQueue {
                             }
                             guard.active_count = guard.active_count.saturating_sub(1);
 
-                            // Find next waiting group
-                            guard.waiting_groups.pop_front()
+                            // Find next waiting workspace
+                            guard.waiting_workspaces.pop_front()
                         };
 
                         if let Some(next_jid) = next {
@@ -292,8 +292,8 @@ impl GroupQueue {
                             let db2 = db.clone();
                             tokio::spawn(async move {
                                 // Re-enter the process loop for the next group
-                                // We create a temporary GroupQueue-like driver
-                                process_group_loop(inner2, next_jid, config2, db2).await;
+                                // We create a temporary WorkspaceQueue-like driver
+                                process_workspace_loop(inner2, next_jid, config2, db2).await;
                             });
                         }
 
@@ -305,8 +305,8 @@ impl GroupQueue {
     }
 }
 
-/// Standalone processing loop used when promoting a waiting group.
-async fn process_group_loop(
+/// Standalone processing loop used when promoting a waiting workspace.
+async fn process_workspace_loop(
     inner: Arc<Mutex<QueueInner>>,
     jid: String,
     config: Config,
@@ -328,12 +328,12 @@ async fn process_group_loop(
                     .unwrap_or_else(|| "default".to_string());
                 Some(WorkItem::Task {
                     task,
-                    group_folder: state.group_folder.clone(),
+                    workspace_folder: state.workspace_folder.clone(),
                     session_id,
                 })
             } else if let Some(msg) = state.pending_messages.pop_front() {
                 Some(WorkItem::Message {
-                    group_folder: state.group_folder.clone(),
+                    workspace_folder: state.workspace_folder.clone(),
                     session_id: msg.session_id,
                     last_timestamp: msg.last_timestamp,
                 })
@@ -345,11 +345,11 @@ async fn process_group_loop(
         match work {
             Some(WorkItem::Task {
                 task,
-                group_folder,
+                workspace_folder,
                 session_id,
             }) => {
                 let result = run_container_agent(
-                    &group_folder,
+                    &workspace_folder,
                     &task.prompt,
                     &session_id,
                     &jid,
@@ -364,12 +364,12 @@ async fn process_group_loop(
                 handle_result(&inner, &jid, result.is_ok()).await;
             }
             Some(WorkItem::Message {
-                group_folder,
+                workspace_folder,
                 session_id,
                 ..
             }) => {
                 let result = run_container_agent(
-                    &group_folder,
+                    &workspace_folder,
                     "Check messages",
                     &session_id,
                     &jid,
@@ -407,7 +407,7 @@ async fn handle_result(inner: &Arc<Mutex<QueueInner>>, jid: &str, success: bool)
                 error!(
                     jid,
                     retries = state.retry_count,
-                    "Group reached max retries, clearing pending work"
+                    "Workspace reached max retries, clearing pending work"
                 );
                 state.pending_messages.clear();
                 state.pending_tasks.clear();
@@ -437,11 +437,11 @@ fn retry_delay(retry_count: u32) -> u64 {
 enum WorkItem {
     Task {
         task: ScheduledTask,
-        group_folder: String,
+        workspace_folder: String,
         session_id: String,
     },
     Message {
-        group_folder: String,
+        workspace_folder: String,
         session_id: String,
         last_timestamp: Option<String>,
     },
@@ -540,7 +540,7 @@ mod tests {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
-        let queue = GroupQueue::new(cfg, db);
+        let queue = WorkspaceQueue::new(cfg, db);
         assert_eq!(queue.get_active_count().await, 0);
         assert_eq!(queue.get_waiting_count().await, 0);
     }
@@ -551,7 +551,7 @@ mod tests {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
-        let queue = GroupQueue::new(cfg, db);
+        let queue = WorkspaceQueue::new(cfg, db);
 
         // Enqueue will attempt to start, which will try docker and fail
         // but the state tracking should still work
@@ -563,7 +563,7 @@ mod tests {
         // The spawned task will fail (no docker) but that's OK for state tests
         let inner = queue.inner.lock().await;
         assert!(inner.states.contains_key("tg:1"));
-        assert_eq!(inner.states["tg:1"].group_folder, "g1");
+        assert_eq!(inner.states["tg:1"].workspace_folder, "g1");
     }
 
     #[tokio::test]
@@ -572,14 +572,14 @@ mod tests {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
-        let queue = GroupQueue::new(cfg, db);
+        let queue = WorkspaceQueue::new(cfg, db);
         let _ = queue
             .enqueue_message_check("slack:C1", "group1", "sess1", Some("2025-01-01T00:00:00Z"))
             .await;
 
         let inner = queue.inner.lock().await;
         let state = inner.states.get("slack:C1").unwrap();
-        assert_eq!(state.group_folder, "group1");
+        assert_eq!(state.workspace_folder, "group1");
     }
 
     #[tokio::test]
@@ -588,13 +588,13 @@ mod tests {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
-        let queue = GroupQueue::new(cfg, db);
+        let queue = WorkspaceQueue::new(cfg, db);
         let task = make_task("daily report");
         let _ = queue.enqueue_task("tg:2", "g2", task, "s2").await;
 
         let inner = queue.inner.lock().await;
         let state = inner.states.get("tg:2").unwrap();
-        assert_eq!(state.group_folder, "g2");
+        assert_eq!(state.workspace_folder, "g2");
     }
 
     #[tokio::test]
@@ -604,31 +604,31 @@ mod tests {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
-        let queue = GroupQueue::new(cfg, db);
+        let queue = WorkspaceQueue::new(cfg, db);
 
         // Manually set up the inner state to simulate concurrency
         {
             let mut inner = queue.inner.lock().await;
-            // Simulate 2 active groups
+            // Simulate 2 active workspaces
             inner.states.insert(
                 "tg:1".to_string(),
-                GroupState {
+                WorkspaceState {
                     jid: "tg:1".to_string(),
                     active: true,
                     pending_messages: VecDeque::new(),
                     pending_tasks: VecDeque::new(),
-                    group_folder: "g1".to_string(),
+                    workspace_folder: "g1".to_string(),
                     retry_count: 0,
                 },
             );
             inner.states.insert(
                 "tg:2".to_string(),
-                GroupState {
+                WorkspaceState {
                     jid: "tg:2".to_string(),
                     active: true,
                     pending_messages: VecDeque::new(),
                     pending_tasks: VecDeque::new(),
-                    group_folder: "g2".to_string(),
+                    workspace_folder: "g2".to_string(),
                     retry_count: 0,
                 },
             );
@@ -640,7 +640,7 @@ mod tests {
 
         let inner = queue.inner.lock().await;
         assert_eq!(inner.active_count, 2);
-        assert!(inner.waiting_groups.contains(&"tg:3".to_string()));
+        assert!(inner.waiting_workspaces.contains(&"tg:3".to_string()));
     }
 
     #[tokio::test]
@@ -648,7 +648,7 @@ mod tests {
         let inner = Arc::new(Mutex::new(QueueInner {
             states: HashMap::new(),
             active_count: 0,
-            waiting_groups: VecDeque::new(),
+            waiting_workspaces: VecDeque::new(),
             max_concurrent: 5,
         }));
 
@@ -656,12 +656,12 @@ mod tests {
             let mut guard = inner.lock().await;
             guard.states.insert(
                 "tg:1".to_string(),
-                GroupState {
+                WorkspaceState {
                     jid: "tg:1".to_string(),
                     active: true,
                     pending_messages: VecDeque::new(),
                     pending_tasks: VecDeque::new(),
-                    group_folder: "g1".to_string(),
+                    workspace_folder: "g1".to_string(),
                     retry_count: 3,
                 },
             );
@@ -678,7 +678,7 @@ mod tests {
         let inner = Arc::new(Mutex::new(QueueInner {
             states: HashMap::new(),
             active_count: 0,
-            waiting_groups: VecDeque::new(),
+            waiting_workspaces: VecDeque::new(),
             max_concurrent: 5,
         }));
 
@@ -686,12 +686,12 @@ mod tests {
             let mut guard = inner.lock().await;
             guard.states.insert(
                 "tg:1".to_string(),
-                GroupState {
+                WorkspaceState {
                     jid: "tg:1".to_string(),
                     active: true,
                     pending_messages: VecDeque::new(),
                     pending_tasks: VecDeque::new(),
-                    group_folder: "g1".to_string(),
+                    workspace_folder: "g1".to_string(),
                     retry_count: 0,
                 },
             );
@@ -713,7 +713,7 @@ mod tests {
         let inner = Arc::new(Mutex::new(QueueInner {
             states: HashMap::new(),
             active_count: 0,
-            waiting_groups: VecDeque::new(),
+            waiting_workspaces: VecDeque::new(),
             max_concurrent: 5,
         }));
 
@@ -726,12 +726,12 @@ mod tests {
             });
             guard.states.insert(
                 "tg:1".to_string(),
-                GroupState {
+                WorkspaceState {
                     jid: "tg:1".to_string(),
                     active: true,
                     pending_messages: msgs,
                     pending_tasks: VecDeque::new(),
-                    group_folder: "g1".to_string(),
+                    workspace_folder: "g1".to_string(),
                     retry_count: MAX_RETRIES - 1,
                 },
             );
