@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: Workspace 架构重构 — Phase A 完成 (11/11 tasks)
+**Phase**: NGB Shell TUI 设计完成，开始 Phase 1 实施
 **Date**: 2026-02-18
 **Branch**: build-by-rust
 **Tests**: 194 passing, zero clippy warnings
@@ -25,22 +25,24 @@
 | 10 | Token 绑定流程 + 引导消息 (合并到 Task 5) | ✅ |
 | 11 | Makefile + 文档更新 | ✅ |
 
-## 架构决策 (已实施)
+## TUI 设计完成
 
-- **RegisteredGroup** → 拆分为 **Workspace + ChannelBinding + AccessToken**
-- Router 使用 **RouteAction** 枚举: Process / BindToken / BuiltinCommand / Unbound
-- Token 格式: `ngb-` + 12位 hex (uuid v4 截取)
-- 内置命令: `/status` `/help` `/unbind`
-- Orchestrator 的 `poll_messages()` 处理所有 4 种 RouteAction
-- GroupQueue 已完全替换为 WorkspaceQueue
-- container_prep 使用 Workspace 类型替代 RegisteredGroup
+**设计文档**: `docs/plans/2026-02-18-ngb-shell-tui.md`
 
-## 清理完成
+### 核心设计决策
+- **Agent**: 容器内运行 Claude Code，ngb shell 是 CC 的 TUI 前端
+- **通信模式**: Pipe/IPC/WS 三种可切换，默认 Pipe（实时 streaming）
+- **主题**: 8 个预置主题，默认 Catppuccin Mocha
+- **消息渲染**: 混合模式 — 用户气泡 + Agent 前缀流式
+- **快捷键**: Emacs + Vim 双模式
 
-- `crates/ngb-types/src/group.rs` — 已删除
-- `crates/ngb-db/src/groups.rs` — 已删除
-- `crates/ngb-core/src/group_queue.rs` — 已删除
-- 所有 `RegisteredGroup`、`GroupRepository`、`GroupQueue` 引用已清除
+### 实施计划（6 Phase）
+- Phase 1: 骨架 + 管道通信
+- Phase 2: 渲染增强（Markdown/代码高亮）
+- Phase 3: CC 状态感知（Thinking/工具调用）
+- Phase 4: 主题 + 键绑定
+- Phase 5: 多通信模式（IPC/WS）
+- Phase 6: 打磨
 
 ## CLI 命令
 
@@ -54,13 +56,21 @@ make workspace-create NAME=<name>
 ngb workspace list
 # 或
 make workspace-list
+
+# 启动 TUI shell（待实现）
+ngb shell <workspace>
+ngb shell <workspace> --transport pipe|ipc|ws
+ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 ```
 
-## 下一步建议
+## 下一步
 
-Phase A (Workspace 架构重构) 已全部完成。可能的后续方向：
+**Phase 1: 骨架 + 管道通信**
 
-1. **Phase B: 端到端集成测试** — 验证完整的 token 绑定 → 消息路由 → 容器执行流程
-2. **Web Dashboard 适配** — 更新 web API 使用 Workspace 模型
-3. **多用户支持** — 基于 Workspace owner 的权限控制
-4. **生产部署准备** — Docker Compose、环境变量配置、日志优化
+1. 创建 `ngb-tui` crate 骨架
+2. 实现 Transport trait + PipeTransport
+3. 基础 TUI 框架（ratatui 初始化）
+
+**参考**:
+- 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`
+- 现有 crate: `crates/ngb-cli/`
