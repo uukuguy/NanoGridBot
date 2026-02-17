@@ -9,6 +9,7 @@ members = [
     "crates/ngb-plugins",
     "crates/ngb-web",
     "crates/ngb-cli",
+    "crates/ngb-tui",
 ]
 
 [workspace.package]

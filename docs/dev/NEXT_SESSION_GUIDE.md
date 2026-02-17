@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI 设计完成，开始 Phase 1 实施
+**Phase**: NGB Shell TUI Phase 1 实施中
 **Date**: 2026-02-18
 **Branch**: build-by-rust
-**Tests**: 194 passing, zero clippy warnings
+**Tests**: 197 passing (新增 3 个), zero clippy warnings
 
 ---
 
@@ -63,13 +63,31 @@ ngb shell <workspace> --transport pipe|ipc|ws
 ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 ```
 
+## 已完成 (Phase 1)
+
+- ✅ Task 1.1: 创建 `ngb-tui` crate 骨架
+- ✅ Task 1.2: Transport trait + PipeTransport 实现
+- ✅ Task 1.3: 基础 TUI 框架（ratatui 初始化）
+
+**新增文件**:
+- `crates/ngb-tui/Cargo.toml`
+- `crates/ngb-tui/src/lib.rs`
+- `crates/ngb-tui/src/app.rs`
+- `crates/ngb-tui/src/transport/mod.rs`
+- `crates/ngb-tui/src/transport/pipe.rs`
+- `crates/ngb-tui/src/transport/output.rs`
+
 ## 下一步
 
-**Phase 1: 骨架 + 管道通信**
+**Phase 1 剩余**:
+- 实现真正的 stdout 读取逻辑
+- 完善 PipeTransport 的 send/recv 实现
 
-1. 创建 `ngb-tui` crate 骨架
-2. 实现 Transport trait + PipeTransport
-3. 基础 TUI 框架（ratatui 初始化）
+**Phase 2: 渲染增强**:
+- Task 2.1: 四区域布局
+- Task 2.2: Chat Area + 滚动
+- Task 2.3: Input Area 多行编辑
+- Task 2.4: 代码高亮 (syntect)
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`

@@ -1,0 +1,37 @@
+[package]
+name = "ngb-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Internal crates
+ngb-types = { workspace = true }
+ngb-config = { workspace = true }
+ngb-db = { workspace = true }
+ngb-core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = "0.1"
+futures = "0.3"
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Date/time
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
