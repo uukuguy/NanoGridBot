@@ -55,6 +55,7 @@ notify = "7"
 lru = "0.12"
 regex = "1"
 uuid = { version = "1", features = ["v4"] }
+cron = "0.12"
 
 [profile.release]
 opt-level = "z"

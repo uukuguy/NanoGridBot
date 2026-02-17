@@ -1,5 +1,125 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-17 - Rust 重写 Phase 2: 核心运行时实现
+
+### 工作概述
+
+在 `build-by-rust` 分支上完成 Rust 重写 Phase 2，为 `ngb-core` 添加 8 个核心运行时模块，将其从工具库转变为完整的容器编排运行时。测试总数从 91 增长到 162。
+
+### 完成的工作
+
+#### 1. mount_security.rs — Docker 挂载安全验证 (6 测试)
+- `MountSpec` / `MountMode` 类型定义
+- `validate_group_mounts()` — 构建标准挂载 (group rw, global ro, sessions rw, ipc rw, project ro)
+- `get_allowed_mount_paths()` — 路径白名单
+- 合并 ContainerConfig 的额外挂载，验证路径遍历和白名单
+
+#### 2. container_runner.rs — Docker 容器执行 (10 测试)
+- `run_container_agent()` — 完整的容器生命周期管理
+- `build_docker_args()` — Docker 命令构建 (`--rm --network=none -v -e --memory --cpus`)
+- `parse_container_output()` — 标记器 JSON 解析 + 多重回退 (纯文本/截断)
+- `check_docker_available()` / `get_container_status()` / `cleanup_container()`
+- 超时处理: `tokio::time::timeout`
+
+#### 3. container_session.rs — 交互式容器会话 (6 测试)
+- `ContainerSession` — 命名容器 (非 `--rm`)，支持会话恢复
+- `start()` / `send()` / `receive()` / `close()` / `is_alive()`
+- 文件 IPC: 原子写入 (tmp + rename)，JSON 格式输入/输出
+- 会话目录: `data_dir/ipc/session-{session_id}/`
+
+#### 4. ipc_handler.rs — ChannelSender trait + 文件 IPC (7 测试)
+- `ChannelSender` trait: `owns_jid()` + `send_message()` (Pin<Box<dyn Future>>)
+- `IpcHandler` — per-JID watcher 任务，500ms 轮询 output 目录
+- `write_input()` / `write_output()` — 原子文件写入
+- 输出文件解析: 自动提取 text/result/message/response 字段
+
+#### 5. group_queue.rs — 并发容器管理 (12 测试) ⭐ 最高价值
+- `GroupQueue` — `Arc<Mutex<QueueInner>>` 状态管理
+- 状态机: IDLE → ACTIVE → drain_pending → next_waiting
+- 并发上限: `config.container_max_concurrent`，溢出进入 `waiting_groups`
+- 任务优先于消息处理
+- 指数退避重试: `5 * 2^(n-1)` 秒，最多 5 次
+- 关键实现: `ensure_state()` / `try_activate()` 辅助函数解决 borrow checker 冲突
+
+#### 6. task_scheduler.rs — CRON/INTERVAL/ONCE 调度 (13 测试)
+- `TaskScheduler` — 60 秒轮询检查到期任务
+- CRON: `cron` 0.12 (7-field 格式)，5-field 自动转换 (prepend "0", append "*")
+- INTERVAL: 正则解析 `^(\d+)([smhd])$` → chrono::Duration
+- ONCE: 未来时间返回 next_run，过期返回 None
+- schedule_task / cancel_task / pause_task / resume_task
+
+#### 7. router.rs — 消息路由 (7 测试)
+- `MessageRouter` — 消息 → 群组路由
+- 触发器匹配: 正则 `(?i)^@{assistant_name}\b` 或自定义 pattern
+- `route_message()` / `send_response()` / `broadcast_to_groups()`
+- `RouteResult` — matched, group_folder, group_jid
+
+#### 8. orchestrator.rs — 总协调器 (10 测试)
+- `Orchestrator` — 整合 GroupQueue, TaskScheduler, IpcHandler, MessageRouter
+- `start()` — 加载群组 → 启动子系统 → 设置 healthy
+- `run_message_loop()` — `tokio::select!` + `watch::channel` shutdown 信号
+- `poll_messages()` — 按 JID 分组 → 触发器检查 → 入队 GroupQueue
+- `HealthStatus` — 序列化健康状态快照
+- register_group / unregister_group / send_to_group
+
+#### 9. 依赖和配置更新
+- Workspace `Cargo.toml`: 添加 `cron = "0.12"`
+- `ngb-core/Cargo.toml`: 添加 `ngb-db`, `serde`, `serde_json`, `cron`, `uuid`，dev-deps 添加 `tempfile`
+- `ngb-core/src/lib.rs`: 8 个新模块声明 + re-exports
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo build` | ✅ 8 crate 全部编译 |
+| `cargo test` | ✅ 162 个测试全部通过 (91 Phase 1 + 71 Phase 2) |
+| `cargo clippy -- -D warnings` | ✅ 零警告 |
+| `cargo fmt -- --check` | ✅ 格式合规 |
+
+### 遇到的问题和解决
+
+| 问题 | 解决方案 |
+|------|----------|
+| HashMap borrow checker 冲突 (group_queue.rs) | 提取 `ensure_state()` / `try_activate()` 辅助函数 |
+| Clippy `too_many_arguments` | `#[allow(clippy::too_many_arguments)]` |
+| Clippy `for_kv_map` | 改用 `by_jid.values()` |
+| Clippy `cloned_ref_to_slice_refs` | 改用 `std::slice::from_ref()` |
+| Clippy `trim_split_whitespace` | 移除 `.trim()` 在 `.split_whitespace()` 前 |
+| Dead code warning `GroupState.jid` | `#[allow(dead_code)]` |
+| MSRV 1.75 不支持 async fn in traits | 使用 `Pin<Box<dyn Future>>` 替代 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| ChannelSender trait 异步方法 | `Pin<Box<dyn Future>>` | MSRV Rust 1.75 不支持原生 async fn in traits |
+| CRON 解析库 | `cron` 0.12 | 7-field 格式，稳定可靠 |
+| Docker 交互 | `tokio::process::Command` | 与 Python 版一致，无额外依赖 |
+| 并发锁策略 | Mutex + tokio::spawn | 避免 hold lock across await，防止死锁 |
+| IPC 文件写入 | 原子写入 (tmp + rename) | 避免竞争条件 |
+
+### 依赖图
+
+```
+ngb-types (零依赖)
+    ↓
+ngb-config (← ngb-types)
+    ↓           ↓
+ngb-db      ngb-core [Phase 1: utils + Phase 2: runtime]
+(← types    (← types + config + db)  ← NEW: ngb-db 依赖
+ + config)
+
+ngb-channels, ngb-plugins, ngb-web (← ngb-types only, stubs)
+ngb-cli (← ngb-types only, stub)
+```
+
+### 下一步: Phase 3
+
+- 实现 ngb-web: axum Web API + WebSocket
+- 实现 ngb-cli: clap CLI (serve/shell/run/logs/session)
+
+---
+
 ## 2026-02-17 - Rust 重写 Phase 1: 基础层实现
 
 ### 工作概述
