@@ -44,6 +44,9 @@ async fn serve() -> anyhow::Result<()> {
 
     // 2. Load config
     let config = Config::load().context("Failed to load configuration")?;
+    config
+        .create_directories()
+        .context("Failed to create directories")?;
     info!(
         project = %config.project_name,
         image = %config.container_image,
@@ -77,7 +80,25 @@ async fn serve() -> anyhow::Result<()> {
         bail!("TELEGRAM_BOT_TOKEN is required for serve mode. Set it in .env or environment.");
     }
 
-    // 5. Create and start orchestrator
+    // 5. Pre-flight checks
+    let image = &config.container_image;
+    let docker_ok = std::process::Command::new("docker")
+        .args(["image", "inspect", image])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !docker_ok {
+        error!(
+            image = %image,
+            "Docker image not found. Run: make docker-build"
+        );
+        bail!("Docker image '{image}' not found. Build it first with: make docker-build");
+    }
+    info!(image = %image, "Docker image verified");
+
+    // 6. Create and start orchestrator
     let orchestrator = Arc::new(Orchestrator::new(config, db.clone(), channels));
     orchestrator
         .start()
@@ -85,7 +106,7 @@ async fn serve() -> anyhow::Result<()> {
         .context("Failed to start orchestrator")?;
     info!("Orchestrator started");
 
-    // 6. Run message loop + wait for shutdown
+    // 7. Run message loop + wait for shutdown
     let orch = orchestrator.clone();
     let message_loop = tokio::spawn(async move {
         if let Err(e) = orch.run_message_loop().await {

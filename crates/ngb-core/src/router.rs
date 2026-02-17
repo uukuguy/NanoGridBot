@@ -103,12 +103,18 @@ impl MessageRouter {
             });
         }
 
-        // No group found for this JID
-        debug!(jid = %message.chat_jid, "No registered group for JID");
+        // No group found — auto-register for this JID
+        let folder = self.auto_register_group(&message.chat_jid).await?;
+        info!(
+            jid = %message.chat_jid,
+            folder = %folder,
+            "Auto-registered new group for unknown JID"
+        );
+
         Ok(RouteResult {
-            matched: false,
-            group_folder: None,
-            group_jid: None,
+            matched: true,
+            group_folder: Some(folder),
+            group_jid: Some(message.chat_jid.clone()),
         })
     }
 
@@ -172,6 +178,51 @@ impl MessageRouter {
             Some(pattern) if !pattern.is_empty() => pattern.clone(),
             _ => format!(r"(?i)^@{}\b", regex::escape(&self.config.assistant_name)),
         }
+    }
+
+    /// Auto-register a group for an unknown JID.
+    ///
+    /// Derives a folder name from the JID (e.g. `telegram:123` → `tg_123`)
+    /// and creates the group directory with a default CLAUDE.md if needed.
+    /// The group is registered with `requires_trigger: false` so all messages
+    /// are processed without needing a trigger keyword.
+    async fn auto_register_group(&self, jid: &str) -> Result<String> {
+        // Derive folder name: "telegram:123" → "tg_123", "slack:C1" → "slack_C1"
+        let folder = jid
+            .replace("telegram:", "tg_")
+            .replace(':', "_")
+            .replace('-', "_");
+
+        let group = ngb_types::RegisteredGroup {
+            jid: jid.to_string(),
+            name: folder.clone(),
+            folder: folder.clone(),
+            trigger_pattern: None,
+            container_config: None,
+            requires_trigger: false,
+        };
+
+        let repo = GroupRepository::new(&self.db);
+        repo.save_group(&group).await?;
+
+        // Create group directory and default CLAUDE.md
+        let group_dir = self.config.groups_dir.join(&folder);
+        if let Err(e) = std::fs::create_dir_all(&group_dir) {
+            warn!(path = %group_dir.display(), error = %e, "Failed to create group directory");
+        } else if !group_dir.join("CLAUDE.md").exists() {
+            let default_instructions = format!(
+                "# {} Agent Instructions\n\n\
+                 You are a helpful AI assistant named {}.\n\
+                 Respond concisely and helpfully.\n",
+                self.config.project_name, self.config.assistant_name
+            );
+            if let Err(e) = std::fs::write(group_dir.join("CLAUDE.md"), default_instructions) {
+                warn!(error = %e, "Failed to write default CLAUDE.md");
+            }
+        }
+
+        info!(jid, folder = %folder, "Group auto-registered");
+        Ok(folder)
     }
 }
 
@@ -370,16 +421,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn route_message_unknown_jid() {
+    async fn route_message_unknown_jid_auto_registers() {
         let db = Arc::new(Database::in_memory().await.unwrap());
         db.initialize().await.unwrap();
 
         let channels: Arc<Vec<Box<dyn ChannelSender>>> = Arc::new(vec![]);
-        let router = MessageRouter::new(test_config(), db, channels);
+        let router = MessageRouter::new(test_config(), db.clone(), channels);
 
         let msg = make_message("unknown:999", "hello");
         let result = router.route_message(&msg).await.unwrap();
-        assert!(!result.matched);
+        // Auto-registration: unknown JID gets a new group
+        assert!(result.matched);
+        assert_eq!(result.group_folder, Some("unknown_999".to_string()));
+        assert_eq!(result.group_jid, Some("unknown:999".to_string()));
+
+        // Verify group was persisted
+        let repo = GroupRepository::new(&db);
+        let group = repo.get_group("unknown:999").await.unwrap();
+        assert!(group.is_some());
+        assert!(!group.unwrap().requires_trigger);
     }
 
     #[tokio::test]
