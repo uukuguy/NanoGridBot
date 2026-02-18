@@ -9,7 +9,12 @@ pub mod transport;
 
 pub use app::{App, InputMode, KeyMode, Message, MessageContent, MessageRole, ToolStatus};
 pub use theme::{all_theme_names, theme_display_name, Theme, ThemeName};
-pub use transport::{OutputChunk, Transport, IPC_TRANSPORT, PIPE_TRANSPORT, WS_TRANSPORT};
+pub use transport::{
+    create_transport, IpcTransport, IpcTransportConfig, OutputChunk, PipeTransport,
+    Transport, TransportKind, WsTransport, WsTransportConfig,
+    IPC_TRANSPORT, PIPE_TRANSPORT, WS_TRANSPORT,
+    DEFAULT_WS_PORT, DEFAULT_IPC_POLL_MS,
+};
 
 /// Entry point for running the NGB Shell TUI
 pub fn run_shell() -> anyhow::Result<()> {

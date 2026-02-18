@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 4 ✅ 完成
+**Phase**: NGB Shell TUI Phase 5 ✅ 完成
 **Date**: 2026-02-18
 **Branch**: build-by-rust
 **Tests**: 197 passing, zero clippy warnings
@@ -110,12 +110,25 @@ ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 - `crates/ngb-tui/src/app.rs` (添加 theme/key_mode 字段和渲染支持)
 - `crates/ngb-tui/src/lib.rs` (导出 theme/key_mode)
 
+## 已完成 (Phase 5)
+
+- ✅ Task 5.1: IpcTransport 实现 (文件轮询，~500ms 延迟)
+- ✅ Task 5.2: WsTransport 实现 (WebSocket 实时通信)
+- ✅ Task 5.3: create_transport 工厂函数 (支持 pipe/ipc/ws)
+
+**新增/修改文件**:
+- `crates/ngb-tui/Cargo.toml` (添加 tokio-tungstenite 依赖)
+- `crates/ngb-tui/src/transport/ipc.rs` (新建 IPC 传输)
+- `crates/ngb-tui/src/transport/ws.rs` (新建 WebSocket 传输)
+- `crates/ngb-tui/src/transport/mod.rs` (添加工厂函数和常量)
+- `crates/ngb-tui/src/lib.rs` (导出新传输类型)
+
 ## 下一步
 
-**Phase 5: 多通信模式**:
-- Task 5.1: IpcTransport 实现
-- Task 5.2: WsTransport 实现
-- Task 5.3: --transport 参数支持
+**Phase 6: 打磨**:
+- Task 6.1: CLI 参数集成 (ngb shell --transport)
+- Task 6.2: 错误处理增强
+- Task 6.3: 状态栏完善
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`

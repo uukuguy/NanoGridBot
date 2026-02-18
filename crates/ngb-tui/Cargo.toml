@@ -15,6 +15,7 @@ tokio = { workspace = true }
 async-trait = "0.1"
 futures = "0.3"
 async-stream = "0.3"
+tokio-tungstenite = "0.24"
 
 # TUI
 ratatui = "0.29"
