@@ -16,10 +16,138 @@ pub enum ThemeName {
     Terminal,
 }
 
+/// Icon set for UI elements
+#[derive(Debug, Clone)]
+pub struct IconSet {
+    /// User message prefix
+    pub user: &'static str,
+    /// Agent/Robot message prefix
+    pub agent: &'static str,
+    /// System message prefix
+    pub system: &'static str,
+    /// Thinking/spinner animation frames
+    pub spinner: [&'static str; 10],
+    /// Tool running indicator
+    pub tool_running: &'static str,
+    /// Tool success indicator
+    pub tool_success: &'static str,
+    /// Tool error indicator
+    pub tool_error: &'static str,
+    /// Bullet point
+    pub bullet: &'static str,
+    /// Arrow (for tool calls)
+    pub arrow: &'static str,
+    /// Checkmark
+    pub check: &'static str,
+    /// Cross/X mark
+    pub cross: &'static str,
+    /// Info icon
+    pub info: &'static str,
+    /// Warning icon
+    pub warning: &'static str,
+    /// Lock icon (for secure)
+    pub lock: &'static str,
+    /// Code block delimiter
+    pub code_block: &'static str,
+}
+
+impl Default for IconSet {
+    fn default() -> Self {
+        Self::modern()
+    }
+}
+
+impl IconSet {
+    /// Modern Unicode icons (default)
+    pub fn modern() -> Self {
+        Self {
+            user: "👤",
+            agent: "🤖",
+            system: "ℹ️",
+            spinner: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+            tool_running: "⚙",
+            tool_success: "✓",
+            tool_error: "✗",
+            bullet: "•",
+            arrow: "→",
+            check: "✓",
+            cross: "✗",
+            info: "ℹ",
+            warning: "⚠",
+            lock: "🔒",
+            code_block: "```",
+        }
+    }
+
+    /// Minimal ASCII icons (fallback)
+    pub fn minimal() -> Self {
+        Self {
+            user: ">",
+            agent: "#",
+            system: "!",
+            spinner: ["|", "/", "-", "\\", "|", "/", "-", "\\", "|", "/"],
+            tool_running: "*",
+            tool_success: "+",
+            tool_error: "x",
+            bullet: "-",
+            arrow: "->",
+            check: "[+]",
+            cross: "[x]",
+            info: "i",
+            warning: "!",
+            lock: "[=]",
+            code_block: "```",
+        }
+    }
+
+    /// Box drawing characters (retro terminal)
+    pub fn box_drawing() -> Self {
+        Self {
+            user: "│",
+            agent: "▣",
+            system: "◉",
+            spinner: ["◐", "◑", "◒", "◓", "◐", "◑", "◒", "◓", "◐", "◑"],
+            tool_running: "◌",
+            tool_success: "◉",
+            tool_error: "✕",
+            bullet: "▪",
+            arrow: "▶",
+            check: "☑",
+            cross: "☒",
+            info: "ℹ",
+            warning: "⚠",
+            lock: "◈",
+            code_block: "┄┄┄",
+        }
+    }
+
+    /// Cute animal icons
+    pub fn cute() -> Self {
+        Self {
+            user: "🧑",
+            agent: "🤖",
+            system: "📢",
+            spinner: ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘", "🌑", "🌚"],
+            tool_running: "🔧",
+            tool_success: "✅",
+            tool_error: "❌",
+            bullet: "◇",
+            arrow: "➜",
+            check: "✅",
+            cross: "❌",
+            info: "💡",
+            warning: "⚡",
+            lock: "🔐",
+            code_block: "───",
+        }
+    }
+}
+
 /// Theme colors for NGB Shell
 #[derive(Debug, Clone)]
 pub struct Theme {
     pub name: ThemeName,
+    pub icons: IconSet,
     pub background: Color,
     pub foreground: Color,
     pub accent: Color,
@@ -60,6 +188,7 @@ impl Theme {
     fn catppuccin_mocha() -> Self {
         Self {
             name: ThemeName::CatppuccinMocha,
+            icons: IconSet::default(),
             background: Color::Rgb(0x1e, 0x1e, 0x2e),
             foreground: Color::Rgb(0xcd, 0xd6, 0xf4),
             accent: Color::Rgb(0x89, 0xb4, 0xfa),
@@ -85,6 +214,7 @@ impl Theme {
     fn catppuccin_latte() -> Self {
         Self {
             name: ThemeName::CatppuccinLatte,
+            icons: IconSet::default(),
             background: Color::Rgb(0xef, 0xf1, 0xf5),
             foreground: Color::Rgb(0x4c, 0x4f, 0x69),
             accent: Color::Rgb(0x04, 0x0a, 0xe3),
@@ -110,6 +240,7 @@ impl Theme {
     fn kanagawa() -> Self {
         Self {
             name: ThemeName::Kanagawa,
+            icons: IconSet::default(),
             background: Color::Rgb(0x1f, 0x1f, 0x28),
             foreground: Color::Rgb(0xc8, 0xc8, 0xc0),
             accent: Color::Rgb(0x7e, 0xa0, 0xcb),
@@ -135,6 +266,7 @@ impl Theme {
     fn rose_pine() -> Self {
         Self {
             name: ThemeName::RosePine,
+            icons: IconSet::default(),
             background: Color::Rgb(0x19, 0x17, 0x1f),
             foreground: Color::Rgb(0xe0, 0xde, 0xdf),
             accent: Color::Rgb(0xc4, 0x69, 0x7d),
@@ -160,6 +292,7 @@ impl Theme {
     fn rose_pine_dawn() -> Self {
         Self {
             name: ThemeName::RosePineDawn,
+            icons: IconSet::default(),
             background: Color::Rgb(0xfa, 0xf4, 0xed),
             foreground: Color::Rgb(0x4a, 0x45, 0x58),
             accent: Color::Rgb(0xd0, 0x72, 0x7c),
@@ -185,6 +318,7 @@ impl Theme {
     fn tokyo_night() -> Self {
         Self {
             name: ThemeName::TokyoNight,
+            icons: IconSet::default(),
             background: Color::Rgb(0x1a, 0x1b, 0x26),
             foreground: Color::Rgb(0xa9, 0xb1, 0xd6),
             accent: Color::Rgb(0x7a, 0xac, 0xe3),
@@ -210,6 +344,7 @@ impl Theme {
     fn midnight() -> Self {
         Self {
             name: ThemeName::Midnight,
+            icons: IconSet::default(),
             background: Color::Rgb(0x00, 0x00, 0x00),
             foreground: Color::Rgb(0xee, 0xee, 0xee),
             accent: Color::Rgb(0x00, 0x7f, 0xff),
@@ -235,6 +370,7 @@ impl Theme {
     fn terminal() -> Self {
         Self {
             name: ThemeName::Terminal,
+            icons: IconSet::minimal(),
             background: Color::Reset,
             foreground: Color::Reset,
             accent: Color::Blue,

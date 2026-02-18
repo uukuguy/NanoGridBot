@@ -609,50 +609,51 @@ impl App {
     fn render_message_item<'a>(msg: &'a Message, collapsed: bool, theme: &'a Theme) -> ListItem<'a> {
         use ratatui::style::Style;
 
+        let icons = &theme.icons;
         match msg.role {
             MessageRole::User => {
                 let content = match &msg.content {
-                    MessageContent::Text(text) => format!("{}  {}", text, msg.timestamp),
+                    MessageContent::Text(text) => format!("{} {}  {}", icons.user, text, msg.timestamp),
                     _ => msg.timestamp.clone(),
                 };
                 ListItem::new(content)
                     .style(Style::default().fg(theme.user_message).italic())
             }
             MessageRole::Agent => {
-                let prefix = format!("◆ Agent  {}", msg.timestamp);
+                let prefix = format!("{} {}  {}", icons.agent, icons.agent, msg.timestamp);
                 match &msg.content {
                     MessageContent::Text(text) => ListItem::new(format!("{}\n{}", prefix, text))
                         .style(Style::default().fg(theme.agent_message)),
                     MessageContent::Thinking(text) => {
-                        let arrow = if collapsed { "▸" } else { "▾" };
                         let preview = if collapsed {
                             format!("[{} collapsed, press Tab to expand]", text.lines().count())
                         } else {
                             text.clone()
                         };
-                        ListItem::new(format!("{} {} Thinking...\n{}", prefix, arrow, preview))
+                        ListItem::new(format!("{} {} {}\n{}", prefix, icons.agent, icons.agent, preview))
                             .style(Style::default().fg(theme.thinking))
                     }
                     MessageContent::ToolCall { name, status } => {
                         let status_icon = match status {
-                            ToolStatus::Running => " ⠙",
-                            ToolStatus::Success => " ✓",
-                            ToolStatus::Error => " ✗",
+                            ToolStatus::Running => format!(" {}", icons.tool_running),
+                            ToolStatus::Success => format!(" {}", icons.tool_success),
+                            ToolStatus::Error => format!(" {}", icons.tool_error),
                         };
                         let color = match status {
                             ToolStatus::Running => theme.tool_running,
                             ToolStatus::Success => theme.tool_success,
                             ToolStatus::Error => theme.tool_error,
                         };
-                        ListItem::new(format!("{} → {} {}", prefix, name, status_icon))
+                        ListItem::new(format!("{} {} {}{}", prefix, icons.arrow, name, status_icon))
                             .style(Style::default().fg(color))
                     }
                     MessageContent::CodeBlock { language, code } => {
-                        ListItem::new(format!("{}\n  ┌─ {} ──\n{}\n  └─", prefix, language, code))
+                        ListItem::new(format!("{}\n  {}{} {} {}\n{}\n  {}",
+                            prefix, icons.code_block, language, icons.code_block, icons.code_block, code, icons.code_block))
                             .style(Style::default().fg(theme.warning))
                     }
                     MessageContent::Error(err) => {
-                        ListItem::new(format!("{} ✗ Error: {}", prefix, err))
+                        ListItem::new(format!("{} {} Error: {}", prefix, icons.cross, err))
                             .style(Style::default().fg(theme.error))
                     }
                 }
@@ -700,6 +701,7 @@ impl App {
         use ratatui::style::Style;
         use ratatui::widgets::Paragraph;
 
+        let icons = &self.theme.icons;
         let mode_str = match self.key_mode {
             KeyMode::Emacs => "emacs",
             KeyMode::Vim => "vim",
@@ -707,14 +709,13 @@ impl App {
         let theme_name = crate::theme::theme_display_name(self.theme.name);
 
         let text = format!(
-            " {} | pipe | {} mode | {} | ↑↓ scroll | Ctrl+C quit ",
-            if self.workspace.is_empty() {
-                "no workspace"
-            } else {
-                &self.workspace
-            },
+            " {} {} {} | {} mode | {} | {} scroll | Ctrl+C quit ",
+            if self.workspace.is_empty() { icons.info } else { icons.agent },
+            if self.workspace.is_empty() { "no workspace" } else { &self.workspace },
+            icons.arrow,
             mode_str,
-            theme_name
+            theme_name,
+            icons.arrow,
         );
 
         let paragraph = Paragraph::new(text)

@@ -8,7 +8,7 @@ pub mod theme;
 pub mod transport;
 
 pub use app::{App, AppConfig, InputMode, KeyMode, Message, MessageContent, MessageRole, ToolStatus};
-pub use theme::{all_theme_names, theme_display_name, Theme, ThemeName};
+pub use theme::{all_theme_names, theme_display_name, IconSet, Theme, ThemeName};
 pub use transport::{
     create_transport, IpcTransport, IpcTransportConfig, OutputChunk, PipeTransport,
     Transport, TransportKind, WsTransport, WsTransportConfig,
