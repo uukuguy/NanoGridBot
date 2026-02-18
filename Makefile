@@ -136,7 +136,7 @@ docker-clean: ## Remove agent Docker image
 # Run
 # ============================================================
 
-.PHONY: serve serve-release workspace-create workspace-list
+.PHONY: serve serve-release workspace-create workspace-list shell
 serve: ## Start NanoGridBot (debug build)
 	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- serve
 
@@ -149,6 +149,19 @@ workspace-create: ## Create a workspace (NAME=my-agent)
 
 workspace-list: ## List all workspaces and bindings
 	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- workspace list
+
+shell: ## Start TUI shell (WORKSPACE=my-workspace)
+	@if [ -z "$(WORKSPACE)" ]; then echo "$(RED)Usage: make shell WORKSPACE=my-workspace$(NC)"; exit 1; fi
+	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- shell $(WORKSPACE)
+
+shell-pipe: ## Start TUI shell with pipe transport
+	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- shell $(WORKSPACE) --transport pipe
+
+shell-ipc: ## Start TUI shell with IPC transport
+	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- shell $(WORKSPACE) --transport ipc
+
+shell-ws: ## Start TUI shell with WebSocket transport
+	$(CARGO) run -p $(CLI_CRATE) $(CARGO_FLAGS) -- shell $(WORKSPACE) --transport ws
 
 # ============================================================
 # Combined Targets
