@@ -187,6 +187,27 @@ pub enum ToolStatus {
     Error,
 }
 
+/// 初始欢迎信息 - 方便后续修改
+/// 初始欢迎信息 - 使用 Line 数组确保缩进正确
+fn welcome_lines() -> Vec<Line<'static>> {
+    use ratatui::text::Line;
+    use ratatui::style::Style;
+
+    let style = Style::default().dim();
+    vec![
+        Line::from(vec![Span::raw("  Start chatting with NanoGridBot")]).style(style),
+        Line::from(vec![Span::raw("")]).style(style),
+        Line::from(vec![Span::raw("  Commands:")]).style(style),
+        Line::from(vec![Span::raw("    /help  - show all commands")]).style(style),
+        Line::from(vec![Span::raw("    /ls    - list workspace files")]).style(style),
+        Line::from(vec![Span::raw("")]).style(style),
+        Line::from(vec![Span::raw("  Shortcuts:")]).style(style),
+        Line::from(vec![Span::raw("    Enter     - send message")]).style(style),
+        Line::from(vec![Span::raw("    Ctrl+C    - clear chat")]).style(style),
+        Line::from(vec![Span::raw("    2×Ctrl+C  - quit")]).style(style),
+    ]
+}
+
 impl App {
     /// Create a new app with default configuration (no transport)
     pub fn new() -> Result<Self> {
@@ -569,20 +590,39 @@ impl App {
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::widgets::{Block, Paragraph};
 
-        // 单行：Logo (部分颜色) + 分隔 + 状态，无边框
+        // 双行布局：第一行 Logo + 版本号，第二行当前目录
         let logo = Style::default().fg(self.theme.accent).add_modifier(Modifier::BOLD);
-        let sep = Style::default().fg(self.theme.secondary);
-        let status_style = Style::default().fg(self.theme.status);  // 使用状态区颜色
+        let white = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+        let path_style = Style::default().fg(self.theme.secondary);
 
-        let line = Line::from(vec![
+        // 第一行：🦑 NanoGridBot v0.1.0-alpha.1
+        let version = env!("CARGO_PKG_VERSION");
+        let version_num_style = Style::default().fg(self.theme.status).add_modifier(Modifier::BOLD);
+        let line1 = Line::from(vec![
             Span::styled(" 🦑 Nano", logo),
-            Span::styled("GridBot", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(" | ", sep),
-            Span::styled(format!("workspace: {}", self.workspace), status_style),
+            Span::styled("GridBot", white.clone()),
+            Span::styled(" v", version_num_style.clone()),
+            Span::styled(version, version_num_style),
+        ]);
+
+        // 第二行：当前目录路径（使用 ~ 风格，与 NanoGridBot 列对齐）
+        let cwd = std::env::current_dir()
+            .map(|p| {
+                if let Ok(home) = std::env::var("HOME") {
+                    let path_str = p.to_string_lossy().to_string();
+                    path_str.replace(&home, "~")
+                } else {
+                    p.to_string_lossy().to_string()
+                }
+            })
+            .unwrap_or_else(|_| "Unknown".to_string());
+        let line2 = Line::from(vec![
+            Span::styled("    ", path_style.clone()),
+            Span::styled(cwd, path_style),
         ]);
 
         let block = Block::new().borders(ratatui::widgets::Borders::NONE);
-        let paragraph = Paragraph::new(line).block(block);
+        let paragraph = Paragraph::new(vec![line1, line2]).block(block);
         f.render_widget(paragraph, area);
     }
 
@@ -597,10 +637,8 @@ impl App {
         let messages = self.messages.clone();
         let theme = self.theme.clone();
         let items: Vec<ListItem> = if messages.is_empty() {
-            vec![ListItem::new(
-                "  Start chatting with Claude Code...\n\n  Press Enter to send message, Ctrl+C clear/interrupt, 2x Ctrl+C quit.",
-            )
-            .style(Style::default().fg(self.theme.secondary).dim())]
+            let dim = Style::default().fg(self.theme.secondary).dim();
+            vec![ListItem::new(welcome_lines()).style(dim)]
         } else {
             messages
                 .iter()
