@@ -182,19 +182,27 @@ make install
 
 ---
 
-## Phase 17: TUI 功能框架增强 (本次会话)
+## Phase 17: TUI 功能框架增强 (本会话)
 
 **日期**: 2026-02-19
+**状态**: ✅ 完成
+**测试**: 10 passing, zero clippy warnings
 
 ### 已完成
 
 | Task | 内容 | 状态 |
 |------|------|------|
 | 1 | 语法高亮 (syntect) - syntax.rs | ✅ |
-| 2 | 树形视图 (Tree) - tree.rs | ✅ |
-| 3 | 条件键绑定系统 - keymap.rs | ✅ |
-| 4 | Engine 抽象层 - engine.rs | ✅ |
+| 2 | 树形视图 (Tree) - tree.rs | ✅ 已集成 |
+| 3 | 条件键绑定系统 - keymap.rs | ✅ 已集成 |
+| 4 | Engine 抽象层 - engine.rs | ✅ 已集成 |
 | 5 | unicode-width 验证 | ✅ |
+
+### 本次集成更新
+
+- **keymap.rs**: 添加 `keybindings` 字段，使用 `default_keybindings()` 初始化，重构 `handle_key` 使用 keymap 系统
+- **tree.rs**: 添加 `message_tree` 字段，实现 `build_message_tree()` 和 `get_message_tree_prefix()` 方法
+- **engine.rs**: 添加 `history_engine` 字段，实现 `add_to_history()` 和 `search_history()` 方法，提交消息时自动保存到历史
 
 ### 新增模块
 
@@ -207,12 +215,6 @@ make install
 
 - `docs/design/RUST_TUI_PROJECTS_ANALYSIS.md` - 详细分析 Atuin、bat、eza 三个 Rust TUI 项目
 
-### 待集成
-
-- keymap 条件键绑定尚未在 App 中实际使用
-- engine 搜索引擎尚未加载历史数据
-- tree 树形视图尚未用于消息线程显示
-
 ---
 
 ## 下一步
@@ -223,7 +225,12 @@ make install
 - 与容器启动流程集成（真正的 agent 响应）
 - 错误处理增强
 - 状态栏完善
-- 条件键绑定集成到 App
+- 历史搜索 UI（Ctrl+R 触发搜索）
+
+**修改文件**:
+- `Cargo.lock`
+- `crates/ngb-tui/Cargo.toml` (添加 uuid 依赖)
+- `crates/ngb-tui/src/app.rs` (集成 keymap/tree/engine)
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`

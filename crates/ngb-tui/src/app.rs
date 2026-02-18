@@ -23,6 +23,9 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
+use crate::engine::{create_history_engine, HistoryEngine, SearchResult, SearchEngine};
+use crate::keymap::{self, Action, EvalContext, KeyBinding};
+use crate::tree::{Tree, TreeNode};
 use crate::theme::{Theme, ThemeName};
 use crate::transport::{create_transport, OutputChunk, Transport, PIPE_TRANSPORT, TransportKind};
 use std::path::PathBuf;
@@ -145,6 +148,16 @@ pub struct App {
     pub key_mode: KeyMode,
     /// Timestamp of last Ctrl+C press (for double-Ctrl+C to quit)
     last_ctrl_c_time: Option<Instant>,
+    /// Conditional keybindings
+    keybindings: Vec<KeyBinding>,
+    /// Search results for history search
+    search_results: Vec<String>,
+    /// Current search query
+    search_query: String,
+    /// Tree structure for message threads
+    message_tree: Tree,
+    /// History engine for search
+    history_engine: HistoryEngine,
 }
 
 struct ToolCallInfo {
@@ -238,6 +251,11 @@ impl App {
             theme: Theme::from_name(config.theme_name),
             key_mode: KeyMode::default(),
             last_ctrl_c_time: None,
+            keybindings: keymap::default_keybindings(),
+            search_results: Vec::new(),
+            search_query: String::new(),
+            message_tree: Tree::new(),
+            history_engine: create_history_engine(),
         })
     }
 
@@ -486,6 +504,196 @@ impl App {
         self.thinking_collapsed
     }
 
+    /// Build evaluation context for keymap condition checking
+    fn build_eval_context(&self) -> EvalContext {
+        EvalContext {
+            cursor_position: self.cursor_position,
+            input_width: unicode_width::UnicodeWidthStr::width(self.input.as_str()),
+            input_byte_len: self.input.len(),
+            selected_index: self.chat_state.selected().unwrap_or(0),
+            results_len: self.search_results.len(),
+            original_input_empty: self.input.is_empty(),
+        }
+    }
+
+    /// Build tree structure from messages for threaded display
+    fn build_message_tree(&mut self) {
+        self.message_tree = Tree::new();
+
+        // Build nodes for each message
+        for (idx, msg) in self.messages.iter().enumerate() {
+            let node = TreeNode::new(
+                idx.to_string(),
+                msg.parent_id.clone(),
+                0,
+                idx == self.messages.len() - 1,
+            );
+            self.message_tree.add_node(node);
+        }
+    }
+
+    /// Get tree prefix for a message at index
+    fn get_message_tree_prefix(&self, idx: usize) -> String {
+        if let Some(node) = self.message_tree.get(&idx.to_string()) {
+            node.prefix(&self.message_tree)
+        } else {
+            String::new()
+        }
+    }
+
+    /// Add a user message to history
+    fn add_to_history(&mut self, content: &str) {
+        let result = SearchResult {
+            id: uuid::Uuid::new_v4().to_string(),
+            content: content.to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+            score: 1.0,
+            metadata: None,
+        };
+        self.history_engine.add_result(result);
+    }
+
+    /// Search history
+    fn search_history(&mut self, query: &str) -> Vec<String> {
+        // Use blocking search since we're in sync context
+        let results = tokio::runtime::Handle::current()
+            .block_on(self.history_engine.search(query));
+        results.into_iter().map(|r| r.content).collect()
+    }
+
+    /// Handle action from keymap
+    fn handle_action(&mut self, action: &Action) {
+        match action {
+            Action::CursorLeft => {
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
+                }
+            }
+            Action::CursorRight => {
+                let char_count = self.input.chars().count();
+                if self.cursor_position < char_count {
+                    self.cursor_position += 1;
+                }
+            }
+            Action::CursorWordLeft => {
+                // Move cursor to start of previous word
+                let words: Vec<&str> = self.input.split_whitespace().collect();
+                if words.is_empty() {
+                    self.cursor_position = 0;
+                    return;
+                }
+                let mut pos = 0;
+                for word in words.iter() {
+                    let word_start = self.input[pos..].find(word).map(|p| pos + p).unwrap_or(pos);
+                    if word_start > self.cursor_position {
+                        break;
+                    }
+                    pos = word_start;
+                }
+                self.cursor_position = pos;
+            }
+            Action::CursorWordRight => {
+                // Move cursor to start of next word
+                if let Some(next_word_pos) = self.input[self.cursor_position..].find(|c: char| c.is_whitespace()) {
+                    let ws_start = self.cursor_position + next_word_pos;
+                    if let Some(next_non_ws) = self.input[ws_start..].find(|c: char| !c.is_whitespace()) {
+                        self.cursor_position = ws_start + next_non_ws;
+                    }
+                } else {
+                    self.cursor_position = self.input.len();
+                }
+            }
+            Action::CursorHome => {
+                self.cursor_position = 0;
+            }
+            Action::CursorEnd => {
+                self.cursor_position = self.input.chars().count();
+            }
+            Action::InsertChar(c) => {
+                let char_idx = self.cursor_position.min(self.input.chars().count());
+                let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
+                self.input.insert(byte_idx, *c);
+                self.cursor_position += 1;
+            }
+            Action::Delete => {
+                if self.cursor_position < self.input.chars().count() {
+                    let char_idx = self.cursor_position;
+                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
+                    self.input.remove(byte_idx);
+                }
+            }
+            Action::DeleteWord => {
+                // Delete from cursor to end of current word
+                if let Some(word_end) = self.input[self.cursor_position..].find(|c: char| c.is_whitespace()) {
+                    let end_pos = self.cursor_position + word_end;
+                    self.input.drain(self.cursor_position..end_pos);
+                } else {
+                    self.input.drain(self.cursor_position..);
+                }
+            }
+            Action::Backspace => {
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
+                    let char_idx = self.cursor_position;
+                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(0);
+                    self.input.remove(byte_idx);
+                }
+            }
+            Action::Clear => {
+                self.input.clear();
+                self.cursor_position = 0;
+            }
+            Action::Submit => {
+                if !self.input.is_empty() {
+                    let msg_content = std::mem::take(&mut self.input);
+                    // Add to history
+                    self.add_to_history(&msg_content);
+                    self.messages.push(Message {
+                        role: MessageRole::User,
+                        content: MessageContent::Text(msg_content),
+                        timestamp: chrono::Local::now().format("%H:%M").to_string(),
+                        parent_id: None,
+                    });
+                    self.cursor_position = 0;
+                    self.input_mode = InputMode::SingleLine;
+                    self.chat_state.select(Some(self.messages.len().saturating_sub(1)));
+                }
+            }
+            Action::ScrollUp => {
+                self.scroll_up();
+            }
+            Action::ScrollDown => {
+                self.scroll_down();
+            }
+            Action::PageUp => {
+                for _ in 0..5 {
+                    self.scroll_up();
+                }
+            }
+            Action::PageDown => {
+                for _ in 0..5 {
+                    self.scroll_down();
+                }
+            }
+            Action::EnterNormalMode => {
+                self.key_mode = KeyMode::Vim;
+            }
+            Action::EnterInsertMode => {
+                self.key_mode = KeyMode::Emacs;
+            }
+            Action::Quit => {
+                self.quit = true;
+            }
+            Action::Interrupt => {
+                // Interrupt current operation
+                self.chunk_receiver = None;
+            }
+            Action::ClearScreen => {
+                self.chat_state.select(Some(self.messages.len().saturating_sub(1)));
+            }
+        }
+    }
+
     pub fn run(&mut self) -> Result<()> {
         // Setup terminal
         enable_raw_mode()?;
@@ -639,6 +847,9 @@ impl App {
         let block = Block::new()
             .borders(Borders::NONE);
 
+        // Build message tree for threaded display
+        self.build_message_tree();
+
         // Build message items - collect messages first to avoid borrow issues
         let messages = self.messages.clone();
         let theme = self.theme.clone();
@@ -655,7 +866,10 @@ impl App {
             messages
                 .iter()
                 .enumerate()
-                .map(|(idx, msg)| Self::render_message_item(msg, self.is_message_collapsed(idx), &theme))
+                .map(|(idx, msg)| {
+                    let tree_prefix = self.get_message_tree_prefix(idx);
+                    Self::render_message_item(msg, self.is_message_collapsed(idx), &theme, &tree_prefix)
+                })
                 .collect()
         };
 
@@ -666,23 +880,28 @@ impl App {
         f.render_stateful_widget(list, area, &mut self.chat_state);
     }
 
-    fn render_message_item<'a>(msg: &'a Message, collapsed: bool, theme: &'a Theme) -> ListItem<'a> {
+    fn render_message_item<'a>(msg: &'a Message, collapsed: bool, theme: &'a Theme, tree_prefix: &str) -> ListItem<'a> {
         use ratatui::style::Style;
 
         let icons = &theme.icons;
         let spacer = "\n";
 
+        // Build prefix with tree structure
+        let base_prefix = |icons: &crate::theme::IconSet, timestamp: &str| -> String {
+            format!("{} {}  {}{}", icons.agent, icons.agent, timestamp, spacer)
+        };
+
         match msg.role {
             MessageRole::User => {
                 let content = match &msg.content {
-                    MessageContent::Text(text) => format!("{} {}  {}{}{}", icons.user, text, msg.timestamp, spacer, spacer),
-                    _ => format!("{}{}", msg.timestamp, spacer),
+                    MessageContent::Text(text) => format!("{}{} {}  {}{}{}", tree_prefix, icons.user, text, msg.timestamp, spacer, spacer),
+                    _ => format!("{}{}{}", tree_prefix, msg.timestamp, spacer),
                 };
                 ListItem::new(content)
                     .style(Style::default().fg(theme.user_message).italic())
             }
             MessageRole::Agent => {
-                let prefix = format!("{} {}  {}{}", icons.agent, icons.agent, msg.timestamp, spacer);
+                let prefix = format!("{}{}", tree_prefix, base_prefix(icons, &msg.timestamp));
                 match &msg.content {
                     MessageContent::Text(text) => ListItem::new(format!("{}{}{}", prefix, text, spacer))
                         .style(Style::default().fg(theme.agent_message)),
@@ -811,9 +1030,8 @@ impl App {
             return;
         }
 
-        // Vim mode specific handling
+        // Vim mode specific handling (not handled by keymap)
         if self.key_mode == KeyMode::Vim {
-            // Vim mode: k/j for scroll, :command for commands, Esc to quit
             match key.code {
                 KeyCode::Char('k') => {
                     self.scroll_up();
@@ -824,7 +1042,6 @@ impl App {
                     return;
                 }
                 KeyCode::Char(':') => {
-                    // Command mode - could implement command input
                     return;
                 }
                 KeyCode::Esc => {
@@ -835,158 +1052,94 @@ impl App {
             }
         }
 
-        // Common handling for both modes
-        // Handle scrolling with arrow keys
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.scroll_up();
-                    return;
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.scroll_down();
-                    return;
-                }
-                KeyCode::Char('q') => {
-                    self.quit = true;
-                    return;
-                }
-                _ => {}
+        // Build evaluation context for condition checking
+        let ctx = self.build_eval_context();
+
+        // Try to find a matching keybinding with satisfied condition
+        // First collect matching actions to avoid borrow issues
+        let mut action_to_handle: Option<Action> = None;
+        for binding in &self.keybindings {
+            if binding.matches(key.code, key.modifiers) && binding.is_condition_satisfied(&ctx) {
+                action_to_handle = Some(binding.action.clone());
+                break;
             }
         }
 
-        match key.code {
-            KeyCode::Tab => {
-                // Tab: toggle collapse on selected message
-                if let Some(selected) = self.chat_state.selected() {
-                    self.toggle_message_collapse(selected);
-                }
-            }
-            KeyCode::Char('q') => {
-                self.quit = true;
-            }
-            KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                // Ctrl+C: similar to Claude Code behavior
-                // - If has input: clear input, return to waiting state
-                // - If no input and running: interrupt current command
-                // - If no input and not running: double-Ctrl+C to quit (within 2 seconds)
-                let now = Instant::now();
-                let is_running = self.chunk_receiver.is_some();
+        // Now handle the action
+        if let Some(action) = action_to_handle {
+            match action {
+                Action::Interrupt => {
+                    // Ctrl+C special handling: similar to Claude Code behavior
+                    let now = Instant::now();
+                    let is_running = self.chunk_receiver.is_some();
 
-                if !self.input.is_empty() {
-                    // Has input: clear it
-                    self.input.clear();
-                    self.cursor_position = 0;
-                } else if is_running {
-                    // Running: interrupt
-                    self.chunk_receiver = None;
-                } else {
-                    // Not running: check for double-Ctrl+C
-                    if let Some(last_time) = self.last_ctrl_c_time {
-                        if now.duration_since(last_time) < Duration::from_secs(2) {
-                            // Double Ctrl+C within 2 seconds: quit
-                            self.quit = true;
+                    if !self.input.is_empty() {
+                        // Has input: clear it
+                        self.input.clear();
+                        self.cursor_position = 0;
+                    } else if is_running {
+                        // Running: interrupt
+                        self.chunk_receiver = None;
+                    } else {
+                        // Not running: check for double-Ctrl+C
+                        if let Some(last_time) = self.last_ctrl_c_time {
+                            if now.duration_since(last_time) < Duration::from_secs(2) {
+                                self.quit = true;
+                            } else {
+                                self.last_ctrl_c_time = Some(now);
+                            }
                         } else {
-                            // Too old: update time
                             self.last_ctrl_c_time = Some(now);
                         }
-                    } else {
-                        // First Ctrl+C
-                        self.last_ctrl_c_time = Some(now);
                     }
                 }
-            }
-            KeyCode::Char('l') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                // Ctrl+L: clear screen (scroll to bottom)
-                self.chat_state
-                    .select(Some(self.messages.len().saturating_sub(1)));
-            }
-            // Arrow keys for cursor movement (move by character, not byte)
-            KeyCode::Left => {
-                if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
+                Action::Submit => {
+                    // Submit needs to handle Shift+Enter for multiline
+                    if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        // Shift+Enter: insert newline
+                        let char_idx = self.cursor_position.min(self.input.chars().count());
+                        let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
+                        self.input.insert(byte_idx, '\n');
+                        self.cursor_position += 1;
+                        self.input_mode = InputMode::MultiLine;
+                    } else if !self.input.is_empty() {
+                        let msg_content = std::mem::take(&mut self.input);
+                        // Add to history before pushing to messages
+                        self.add_to_history(&msg_content);
+                        self.messages.push(Message {
+                            role: MessageRole::User,
+                            content: MessageContent::Text(msg_content),
+                            timestamp: chrono::Local::now().format("%H:%M").to_string(),
+                            parent_id: None,
+                        });
+                        self.cursor_position = 0;
+                        self.input_mode = InputMode::SingleLine;
+                        self.chat_state.select(Some(self.messages.len().saturating_sub(1)));
+                    }
                 }
-            }
-            KeyCode::Right => {
-                let char_count = self.input.chars().count();
-                if self.cursor_position < char_count {
-                    self.cursor_position += 1;
-                }
-            }
-            KeyCode::Home => {
-                self.cursor_position = 0;
-            }
-            KeyCode::End => {
-                self.cursor_position = self.input.chars().count();
-            }
-            // Character input
-            KeyCode::Char(c) => {
-                // Convert char index to byte index
-                let char_idx = self.cursor_position.min(self.input.chars().count());
-                let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                self.input.insert(byte_idx, c);
-                self.cursor_position += 1;
-            }
-            KeyCode::Backspace => {
-                if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
-                    // Convert char index to byte index
-                    let char_idx = self.cursor_position;
-                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(0);
-                    self.input.remove(byte_idx);
-                }
-            }
-            KeyCode::Delete => {
-                if self.cursor_position < self.input.chars().count() {
-                    // Convert char index to byte index
-                    let char_idx = self.cursor_position;
-                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                    self.input.remove(byte_idx);
-                }
-            }
-            KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    // Shift+Enter: insert newline
+                Action::InsertChar(c) => {
                     let char_idx = self.cursor_position.min(self.input.chars().count());
                     let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                    self.input.insert(byte_idx, '\n');
+                    self.input.insert(byte_idx, c);
                     self.cursor_position += 1;
-                    self.input_mode = InputMode::MultiLine;
-                } else if !self.input.is_empty() {
-                    // Send message
-                    let msg_content = std::mem::take(&mut self.input);
-                    self.messages.push(Message {
-                        role: MessageRole::User,
-                        content: MessageContent::Text(msg_content),
-                        timestamp: chrono::Local::now().format("%H:%M").to_string(),
-                        parent_id: None,
-                    });
-                    self.cursor_position = 0;
-                    self.input_mode = InputMode::SingleLine;
-                    // Scroll to bottom after sending
-                    self.chat_state
-                        .select(Some(self.messages.len().saturating_sub(1)));
+                }
+                _ => {
+                    self.handle_action(&action);
                 }
             }
-            // Page up/down for scrolling
-            KeyCode::PageUp => {
-                for _ in 0..5 {
-                    self.scroll_up();
-                }
+            return;
+        }
+
+        // Fallback: Tab for collapse toggle (not in keymap)
+        if key.code == KeyCode::Tab {
+            if let Some(selected) = self.chat_state.selected() {
+                self.toggle_message_collapse(selected);
             }
-            KeyCode::PageDown => {
-                for _ in 0..5 {
-                    self.scroll_down();
-                }
-            }
-            // Arrow up/down for history (placeholder)
-            KeyCode::Up => {
-                // Could implement command history here
-            }
-            KeyCode::Down => {
-                // Could implement command history here
-            }
-            _ => {}
+        }
+
+        // Arrow up/down for history (not in keymap yet)
+        if key.code == KeyCode::Up || key.code == KeyCode::Down {
+            // Could implement command history here using engine
         }
     }
 }
