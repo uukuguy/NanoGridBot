@@ -20,8 +20,17 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
+use crate::theme::{Theme, ThemeName};
 use crate::transport::{OutputChunk, Transport};
 use tokio::sync::mpsc;
+
+/// Key input mode (Emacs or Vim)
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum KeyMode {
+    #[default]
+    Emacs,
+    Vim,
+}
 
 pub struct App {
     /// Whether to quit the application
@@ -56,6 +65,10 @@ pub struct App {
     chunk_receiver: Option<mpsc::Receiver<OutputChunk>>,
     /// Set of message indices that have thinking collapsed
     collapsed_thinking: std::collections::HashSet<usize>,
+    /// Current theme
+    pub theme: Theme,
+    /// Key input mode (Emacs or Vim)
+    pub key_mode: KeyMode,
 }
 
 struct ToolCallInfo {
@@ -118,7 +131,34 @@ impl App {
             agent_timestamp: chrono::Local::now().format("%H:%M").to_string(),
             chunk_receiver: None,
             collapsed_thinking: std::collections::HashSet::new(),
+            theme: Theme::default(),
+            key_mode: KeyMode::default(),
         })
+    }
+
+    /// Create a new app with a specific theme
+    pub fn with_theme(theme_name: ThemeName) -> Result<Self> {
+        let mut app = Self::new()?;
+        app.theme = Theme::from_name(theme_name);
+        Ok(app)
+    }
+
+    /// Set the theme
+    pub fn set_theme(&mut self, theme_name: ThemeName) {
+        self.theme = Theme::from_name(theme_name);
+    }
+
+    /// Set the key mode
+    pub fn set_key_mode(&mut self, mode: KeyMode) {
+        self.key_mode = mode;
+    }
+
+    /// Toggle key mode between Emacs and Vim
+    pub fn toggle_key_mode(&mut self) {
+        self.key_mode = match self.key_mode {
+            KeyMode::Emacs => KeyMode::Vim,
+            KeyMode::Vim => KeyMode::Emacs,
+        };
     }
 
     /// Set the transport for communicating with Claude Code and start processing
@@ -419,61 +459,62 @@ impl App {
         let block = Block::new()
             .borders(Borders::ALL)
             .title("NanoGridBot")
-            .title_style(Style::default().fg(ratatui::style::Color::Cyan));
+            .title_style(Style::default().fg(self.theme.accent));
 
-        let paragraph = Paragraph::new(text).block(block);
+        let paragraph = Paragraph::new(text)
+            .block(block)
+            .style(Style::default().fg(self.theme.foreground));
         f.render_widget(paragraph, area);
     }
 
     fn draw_chat(&mut self, f: &mut Frame, area: Rect) {
-        use ratatui::style::{Color, Style, Stylize};
+        use ratatui::style::Style;
         use ratatui::widgets::{Block, Borders};
 
         let block = Block::new()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
+            .border_style(Style::default().fg(self.theme.border));
 
         // Build message items - collect messages first to avoid borrow issues
         let messages = self.messages.clone();
+        let theme = self.theme.clone();
         let items: Vec<ListItem> = if messages.is_empty() {
             vec![ListItem::new(
                 "  Start chatting with Claude Code...\n\n  Press Enter to send message, Ctrl+C to quit.",
             )
-            .style(Style::default().dim())]
+            .style(Style::default().fg(self.theme.secondary).dim())]
         } else {
             messages
                 .iter()
                 .enumerate()
-                .map(|(idx, msg)| Self::render_message_item(msg, self.is_message_collapsed(idx)))
+                .map(|(idx, msg)| Self::render_message_item(msg, self.is_message_collapsed(idx), &theme))
                 .collect()
         };
 
         let list = List::new(items)
             .block(block)
-            .style(Style::default().fg(Color::White));
+            .style(Style::default().fg(self.theme.foreground));
 
         f.render_stateful_widget(list, area, &mut self.chat_state);
     }
 
-    fn render_message_item(msg: &Message, collapsed: bool) -> ListItem<'_> {
+    fn render_message_item<'a>(msg: &'a Message, collapsed: bool, theme: &'a Theme) -> ListItem<'a> {
         use ratatui::style::Style;
 
         match msg.role {
             MessageRole::User => {
-                // User message: cyan colored
                 let content = match &msg.content {
                     MessageContent::Text(text) => format!("{}  {}", text, msg.timestamp),
                     _ => msg.timestamp.clone(),
                 };
                 ListItem::new(content)
-                    .style(Style::default().fg(ratatui::style::Color::Cyan).italic())
+                    .style(Style::default().fg(theme.user_message).italic())
             }
             MessageRole::Agent => {
-                // Agent message: green colored with prefix
                 let prefix = format!("◆ Agent  {}", msg.timestamp);
                 match &msg.content {
                     MessageContent::Text(text) => ListItem::new(format!("{}\n{}", prefix, text))
-                        .style(Style::default().fg(ratatui::style::Color::LightGreen)),
+                        .style(Style::default().fg(theme.agent_message)),
                     MessageContent::Thinking(text) => {
                         let arrow = if collapsed { "▸" } else { "▾" };
                         let preview = if collapsed {
@@ -482,7 +523,7 @@ impl App {
                             text.clone()
                         };
                         ListItem::new(format!("{} {} Thinking...\n{}", prefix, arrow, preview))
-                            .style(Style::default().fg(ratatui::style::Color::Yellow))
+                            .style(Style::default().fg(theme.thinking))
                     }
                     MessageContent::ToolCall { name, status } => {
                         let status_icon = match status {
@@ -491,20 +532,20 @@ impl App {
                             ToolStatus::Error => " ✗",
                         };
                         let color = match status {
-                            ToolStatus::Running => ratatui::style::Color::Yellow,
-                            ToolStatus::Success => ratatui::style::Color::Green,
-                            ToolStatus::Error => ratatui::style::Color::Red,
+                            ToolStatus::Running => theme.tool_running,
+                            ToolStatus::Success => theme.tool_success,
+                            ToolStatus::Error => theme.tool_error,
                         };
                         ListItem::new(format!("{} → {} {}", prefix, name, status_icon))
                             .style(Style::default().fg(color))
                     }
                     MessageContent::CodeBlock { language, code } => {
                         ListItem::new(format!("{}\n  ┌─ {} ──\n{}\n  └─", prefix, language, code))
-                            .style(Style::default().fg(ratatui::style::Color::LightYellow))
+                            .style(Style::default().fg(theme.warning))
                     }
                     MessageContent::Error(err) => {
                         ListItem::new(format!("{} ✗ Error: {}", prefix, err))
-                            .style(Style::default().fg(ratatui::style::Color::Red))
+                            .style(Style::default().fg(theme.error))
                     }
                 }
             }
@@ -512,6 +553,7 @@ impl App {
     }
 
     fn draw_input(&self, f: &mut Frame, area: Rect) {
+        use ratatui::style::Style;
         use ratatui::widgets::{Block, Borders};
 
         let block = Block::new()
@@ -519,7 +561,9 @@ impl App {
             .title(match self.input_mode {
                 InputMode::SingleLine => " Input ",
                 InputMode::MultiLine => " Input (Shift+Enter for newline) ",
-            });
+            })
+            .border_style(Style::default().fg(self.theme.border))
+            .title_style(Style::default().fg(self.theme.accent));
 
         let text = if self.input.is_empty() {
             " Type a message..."
@@ -529,6 +573,7 @@ impl App {
 
         let paragraph = ratatui::widgets::Paragraph::new(text)
             .block(block)
+            .style(Style::default().fg(self.theme.input))
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         f.render_widget(paragraph, area);
@@ -544,19 +589,28 @@ impl App {
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
+        use ratatui::style::Style;
         use ratatui::widgets::Paragraph;
 
+        let mode_str = match self.key_mode {
+            KeyMode::Emacs => "emacs",
+            KeyMode::Vim => "vim",
+        };
+        let theme_name = crate::theme::theme_display_name(self.theme.name);
+
         let text = format!(
-            " {} | pipe | ↑↓ scroll | Ctrl+C quit ",
+            " {} | pipe | {} mode | {} | ↑↓ scroll | Ctrl+C quit ",
             if self.workspace.is_empty() {
                 "no workspace"
             } else {
                 &self.workspace
-            }
+            },
+            mode_str,
+            theme_name
         );
 
         let paragraph = Paragraph::new(text)
-            .style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray));
+            .style(Style::default().fg(self.theme.status));
         f.render_widget(paragraph, area);
     }
 
@@ -565,6 +619,31 @@ impl App {
             return;
         }
 
+        // Vim mode specific handling
+        if self.key_mode == KeyMode::Vim {
+            // Vim mode: k/j for scroll, :command for commands, Esc to quit
+            match key.code {
+                KeyCode::Char('k') => {
+                    self.scroll_up();
+                    return;
+                }
+                KeyCode::Char('j') => {
+                    self.scroll_down();
+                    return;
+                }
+                KeyCode::Char(':') => {
+                    // Command mode - could implement command input
+                    return;
+                }
+                KeyCode::Esc => {
+                    self.quit = true;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        // Common handling for both modes
         // Handle scrolling with arrow keys
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match key.code {

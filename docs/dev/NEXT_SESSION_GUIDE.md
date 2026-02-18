@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 3 ✅ 完成
+**Phase**: NGB Shell TUI Phase 4 ✅ 完成
 **Date**: 2026-02-18
 **Branch**: build-by-rust
 **Tests**: 197 passing, zero clippy warnings
@@ -99,12 +99,23 @@ ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 **修改文件**:
 - `crates/ngb-tui/src/app.rs` (添加 transport/stream/collapse 支持)
 
+## 已完成 (Phase 4)
+
+- ✅ Task 4.1: 主题系统抽象 (Theme/ThemeName 枚举)
+- ✅ Task 4.2: 预置 8 主题 (catppuccin-mocha/latte, kanagawa, rose-pine/dawn, tokyo-night, midnight, terminal)
+- ✅ Task 4.3: Vim 模式键绑定 (k/j 滚动, Esc 退出, : 命令模式预留)
+
+**新增/修改文件**:
+- `crates/ngb-tui/src/theme/mod.rs` (新建主题模块)
+- `crates/ngb-tui/src/app.rs` (添加 theme/key_mode 字段和渲染支持)
+- `crates/ngb-tui/src/lib.rs` (导出 theme/key_mode)
+
 ## 下一步
 
-**Phase 4: 主题 + 键绑定**:
-- Task 4.1: 主题系统抽象
-- Task 4.2: 预置 8 主题
-- Task 4.3: Vim 模式键绑定
+**Phase 5: 多通信模式**:
+- Task 5.1: IpcTransport 实现
+- Task 5.2: WsTransport 实现
+- Task 5.3: --transport 参数支持
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`

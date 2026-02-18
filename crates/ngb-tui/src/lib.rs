@@ -4,9 +4,11 @@
 //! running in workspace containers.
 
 pub mod app;
+pub mod theme;
 pub mod transport;
 
-pub use app::{App, InputMode, Message, MessageContent, MessageRole, ToolStatus};
+pub use app::{App, InputMode, KeyMode, Message, MessageContent, MessageRole, ToolStatus};
+pub use theme::{all_theme_names, theme_display_name, Theme, ThemeName};
 pub use transport::{OutputChunk, Transport, IPC_TRANSPORT, PIPE_TRANSPORT, WS_TRANSPORT};
 
 /// Entry point for running the NGB Shell TUI
