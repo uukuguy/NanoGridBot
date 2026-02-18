@@ -693,7 +693,11 @@ impl App {
         // Render cursor at position
         #[allow(deprecated)]
         if !self.input.is_empty() && area.width > 2 {
-            let cursor_x = (self.cursor_position as u16).min(area.width - 2);
+            // Calculate cursor X position based on display width, not character count
+            // This handles wide characters (Chinese, Japanese, Korean, emojis) correctly
+            let input_before_cursor: String = self.input.chars().take(self.cursor_position).collect();
+            let cursor_x = unicode_width::UnicodeWidthStr::width(input_before_cursor.as_str()) as u16;
+            let cursor_x = cursor_x.min(area.width - 2);
             let x = area.x + 1 + cursor_x;
             let y = area.y + 1;
             f.set_cursor(x, y);
@@ -796,14 +800,15 @@ impl App {
                 self.chat_state
                     .select(Some(self.messages.len().saturating_sub(1)));
             }
-            // Arrow keys for cursor movement
+            // Arrow keys for cursor movement (move by character, not byte)
             KeyCode::Left => {
                 if self.cursor_position > 0 {
                     self.cursor_position -= 1;
                 }
             }
             KeyCode::Right => {
-                if self.cursor_position < self.input.chars().count() {
+                let char_count = self.input.chars().count();
+                if self.cursor_position < char_count {
                     self.cursor_position += 1;
                 }
             }

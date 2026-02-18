@@ -20,6 +20,7 @@ tokio-tungstenite = "0.24"
 # TUI
 ratatui = "0.29"
 crossterm = "0.28"
+unicode-width = "0.2"
 
 # Markdown rendering
 pulldown-cmark = "0.12"
