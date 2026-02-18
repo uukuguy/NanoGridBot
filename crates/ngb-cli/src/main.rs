@@ -62,12 +62,12 @@ async fn main() -> anyhow::Result<()> {
             workspace,
             transport,
             theme,
-        } => shell(workspace, transport, theme)?,
+        } => shell(workspace, transport, theme).await?,
     }
     Ok(())
 }
 
-fn shell(workspace: String, transport: String, theme: Option<String>) -> anyhow::Result<()> {
+async fn shell(workspace: String, transport: String, theme: Option<String>) -> anyhow::Result<()> {
     // Parse transport kind
     let transport_kind = match transport.as_str() {
         "pipe" => PIPE_TRANSPORT,
@@ -107,9 +107,9 @@ fn shell(workspace: String, transport: String, theme: Option<String>) -> anyhow:
         .with_data_dir(data_dir)
         .with_image(&config.container_image);
 
-    // Create app and setup transport (transport must be setup from async context)
+    // Create app and setup transport
     let mut app = ngb_tui::App::with_config(app_config.clone())?;
-    app.setup_transport(&app_config)?;
+    app.setup_transport(&app_config).await?;
     app.run()?;
 
     Ok(())

@@ -215,23 +215,21 @@ impl App {
     }
 
     /// Set up transport after app creation (must be called from async context)
-    pub fn setup_transport(&mut self, config: &AppConfig) -> anyhow::Result<()> {
+    pub async fn setup_transport(&mut self, config: &AppConfig) -> anyhow::Result<()> {
         if config.workspace.is_empty() {
             return Ok(());
         }
 
-        // Use tokio runtime to create transport
-        let rt = tokio::runtime::Handle::current();
-        self.transport = match rt.block_on(async {
-            create_transport(
-                config.transport_kind,
-                &config.workspace,
-                &config.image,
-                config.data_dir.clone(),
-                config.ws_url.clone(),
-            )
-            .await
-        }) {
+        // Create transport in async context
+        self.transport = match create_transport(
+            config.transport_kind,
+            &config.workspace,
+            &config.image,
+            config.data_dir.clone(),
+            config.ws_url.clone(),
+        )
+        .await
+        {
             Ok(t) => Some(t),
             Err(e) => {
                 tracing::warn!(
