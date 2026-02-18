@@ -702,8 +702,10 @@ impl App {
                             .style(Style::default().fg(color))
                     }
                     MessageContent::CodeBlock { language, code } => {
+                        // Use syntax highlighting
+                        let highlighted = crate::syntax::highlight_code(code, language);
                         let cb = icons.code_block;
-                        let block = format!("{} {} {}\n{}\n", cb, language, cb, code);
+                        let block = format!("{} {} {}\n{}\n", cb, language, cb, highlighted);
                         ListItem::new(format!("{}{}{}", prefix, block, spacer))
                             .style(Style::default().fg(theme.warning))
                     }
