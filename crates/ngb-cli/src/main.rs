@@ -100,14 +100,16 @@ fn shell(workspace: String, transport: String, theme: Option<String>) -> anyhow:
     let config = Config::load().context("Failed to load configuration")?;
     let data_dir = config.store_dir.join("workspaces").join(&workspace);
 
-    // Create app config and run
+    // Create app config
     let app_config = AppConfig::new(workspace)
         .with_transport(transport_kind)
         .with_theme(theme_name)
         .with_data_dir(data_dir)
         .with_image(&config.container_image);
 
-    let mut app = ngb_tui::App::with_config(app_config)?;
+    // Create app and setup transport (transport must be setup from async context)
+    let mut app = ngb_tui::App::with_config(app_config.clone())?;
+    app.setup_transport(&app_config)?;
     app.run()?;
 
     Ok(())

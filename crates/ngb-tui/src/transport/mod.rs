@@ -58,7 +58,7 @@ pub const DEFAULT_IPC_POLL_MS: u64 = 500;
 /// * PipeTransport for "pipe"
 /// * IpcTransport for "ipc"
 /// * WsTransport for "ws"
-pub fn create_transport(
+pub async fn create_transport(
     kind: TransportKind,
     workspace_id: &str,
     image: &str,
@@ -67,10 +67,7 @@ pub fn create_transport(
 ) -> anyhow::Result<Box<dyn Transport>> {
     match kind {
         PIPE_TRANSPORT => {
-            let rt = tokio::runtime::Handle::current();
-            let transport = rt.block_on(async {
-                PipeTransport::new(workspace_id, image).await
-            })?;
+            let transport = PipeTransport::new(workspace_id, image).await?;
             Ok(Box::new(transport))
         }
         IPC_TRANSPORT => {

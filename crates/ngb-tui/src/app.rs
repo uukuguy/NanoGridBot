@@ -183,39 +183,15 @@ pub enum ToolStatus {
 }
 
 impl App {
-    /// Create a new app with default configuration
+    /// Create a new app with default configuration (no transport)
     pub fn new() -> Result<Self> {
         Self::with_config(AppConfig::default())
     }
 
-    /// Create a new app with custom configuration
+    /// Create a new app with custom configuration (no transport)
     pub fn with_config(config: AppConfig) -> Result<Self> {
         let mut chat_state = ListState::default();
         chat_state.select(Some(0));
-
-        // Create transport if workspace is specified
-        let transport = if config.workspace.is_empty() {
-            None
-        } else {
-            match create_transport(
-                config.transport_kind,
-                &config.workspace,
-                &config.image,
-                config.data_dir.clone(),
-                config.ws_url.clone(),
-            ) {
-                Ok(t) => Some(t),
-                Err(e) => {
-                    tracing::warn!(
-                        workspace = %config.workspace,
-                        transport = ?config.transport_kind,
-                        error = %e,
-                        "Failed to create transport, running in offline mode"
-                    );
-                    None
-                }
-            }
-        };
 
         Ok(Self {
             quit: false,
@@ -226,7 +202,7 @@ impl App {
             chat_state,
             cursor_position: 0,
             input_mode: InputMode::SingleLine,
-            transport,
+            transport: None,
             thinking_text: String::new(),
             thinking_collapsed: false,
             current_tool: None,
@@ -236,6 +212,38 @@ impl App {
             theme: Theme::from_name(config.theme_name),
             key_mode: KeyMode::default(),
         })
+    }
+
+    /// Set up transport after app creation (must be called from async context)
+    pub fn setup_transport(&mut self, config: &AppConfig) -> anyhow::Result<()> {
+        if config.workspace.is_empty() {
+            return Ok(());
+        }
+
+        // Use tokio runtime to create transport
+        let rt = tokio::runtime::Handle::current();
+        self.transport = match rt.block_on(async {
+            create_transport(
+                config.transport_kind,
+                &config.workspace,
+                &config.image,
+                config.data_dir.clone(),
+                config.ws_url.clone(),
+            )
+            .await
+        }) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                tracing::warn!(
+                    workspace = %config.workspace,
+                    transport = ?config.transport_kind,
+                    error = %e,
+                    "Failed to create transport, running in offline mode"
+                );
+                None
+            }
+        };
+        Ok(())
     }
 
     /// Create a new app with a specific theme (deprecated, use with_config)
