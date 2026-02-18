@@ -177,6 +177,20 @@ format: fmt format-py ## Format all code (Rust + Python)
 ci: lint test ## Run full CI pipeline (lint + test)
 
 # ============================================================
+# Install
+# ============================================================
+
+.PHONY: install install-shell
+install: ## Install ngb binary to PATH (requires sudo on macOS)
+	$(CARGO) build -p $(CLI_CRATE)
+	install -m 755 target/debug/ngb /usr/local/bin/ngb
+
+install-shell: ## Install ngb binary and run shell
+	$(CARGO) build -p $(CLI_CRATE)
+	install -m 755 target/debug/ngb /usr/local/bin/ngb
+	/usr/local/bin/ngb shell $(WORKSPACE)
+
+# ============================================================
 # Clean
 # ============================================================
 
