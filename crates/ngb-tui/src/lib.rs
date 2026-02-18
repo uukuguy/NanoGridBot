@@ -6,8 +6,10 @@
 pub mod app;
 pub mod transport;
 
-pub use app::App;
-pub use transport::{Transport, OutputChunk, PIPE_TRANSPORT, IPC_TRANSPORT, WS_TRANSPORT};
+pub use app::{
+    App, InputMode, Message, MessageContent, MessageRole, ToolStatus,
+};
+pub use transport::{OutputChunk, Transport, IPC_TRANSPORT, PIPE_TRANSPORT, WS_TRANSPORT};
 
 /// Entry point for running the NGB Shell TUI
 pub fn run_shell() -> anyhow::Result<()> {

@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 1 ✅ 完成
+**Phase**: NGB Shell TUI Phase 2 ✅ 完成
 **Date**: 2026-02-18
 **Branch**: build-by-rust
-**Tests**: 200 passing (新增 3 个), zero clippy warnings
+**Tests**: 197 passing, zero clippy warnings
 
 ---
 
@@ -79,19 +79,23 @@ ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 - `crates/ngb-tui/src/transport/pipe.rs` (重写 send/recv_stream)
 - `crates/ngb-tui/src/transport/output.rs`
 
+## 已完成 (Phase 2)
+
+- ✅ Task 2.1: 四区域布局 (Header/Chat/Input/Status)
+- ✅ Task 2.2: Chat Area + 滚动 (ListState, 鼠标/键盘滚动)
+- ✅ Task 2.3: Input Area 多行编辑 (Shift+Enter 换行, 光标移动)
+- ✅ Task 2.4: 代码块渲染 (基本代码块显示，无 syntect 颜色)
+
+**修改文件**:
+- `crates/ngb-tui/Cargo.toml` (添加 pulldown-cmark 依赖)
+- `crates/ngb-tui/src/app.rs` (完整重写，添加消息类型、滚动、输入处理)
+
 ## 下一步
 
-**Phase 2: 渲染增强**:
-- Task 2.1: 四区域布局
-- Task 2.2: Chat Area + 滚动
-- Task 2.3: Input Area 多行编辑
-- Task 2.4: 代码高亮 (syntect)
-
-**Phase 2: 渲染增强**:
-- Task 2.1: 四区域布局
-- Task 2.2: Chat Area + 滚动
-- Task 2.3: Input Area 多行编辑
-- Task 2.4: 代码高亮 (syntect)
+**Phase 3: CC 状态感知**:
+- Task 3.1: OutputChunk 解析
+- Task 3.2: Thinking 折叠块
+- Task 3.3: 工具调用状态行
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`
