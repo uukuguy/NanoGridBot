@@ -180,6 +180,41 @@ make install
 - `crates/ngb-tui/src/app.rs`
 - `crates/ngb-tui/welcome.txt` (新建)
 
+---
+
+## Phase 17: TUI 功能框架增强 (本次会话)
+
+**日期**: 2026-02-19
+
+### 已完成
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| 1 | 语法高亮 (syntect) - syntax.rs | ✅ |
+| 2 | 树形视图 (Tree) - tree.rs | ✅ |
+| 3 | 条件键绑定系统 - keymap.rs | ✅ |
+| 4 | Engine 抽象层 - engine.rs | ✅ |
+| 5 | unicode-width 验证 | ✅ |
+
+### 新增模块
+
+- `crates/ngb-tui/src/syntax.rs` - 语法高亮
+- `crates/ngb-tui/src/tree.rs` - 树形视图
+- `crates/ngb-tui/src/keymap.rs` - 条件键绑定
+- `crates/ngb-tui/src/engine.rs` - 搜索引擎抽象
+
+### 分析文档
+
+- `docs/design/RUST_TUI_PROJECTS_ANALYSIS.md` - 详细分析 Atuin、bat、eza 三个 Rust TUI 项目
+
+### 待集成
+
+- keymap 条件键绑定尚未在 App 中实际使用
+- engine 搜索引擎尚未加载历史数据
+- tree 树形视图尚未用于消息线程显示
+
+---
+
 ## 下一步
 
 **TUI 6 Phase 全部完成**，NGB Shell TUI MVP 已就绪！
@@ -188,7 +223,9 @@ make install
 - 与容器启动流程集成（真正的 agent 响应）
 - 错误处理增强
 - 状态栏完善
+- 条件键绑定集成到 App
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`
+- TUI 分析: `docs/design/RUST_TUI_PROJECTS_ANALYSIS.md`
 - 可运行: `make shell WORKSPACE=xxx`

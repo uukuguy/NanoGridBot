@@ -157,6 +157,8 @@ pub struct Message {
     pub role: MessageRole,
     pub content: MessageContent,
     pub timestamp: String,
+    /// Parent message ID for tree view (threading/replies)
+    pub parent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -336,6 +338,7 @@ impl App {
                     role: MessageRole::Agent,
                     content: MessageContent::Text(text),
                     timestamp: self.agent_timestamp.clone(),
+                    parent_id: None,
                 });
             }
             OutputChunk::ThinkingStart => {
@@ -359,6 +362,7 @@ impl App {
                         status: ToolStatus::Running,
                     },
                     timestamp: self.agent_timestamp.clone(),
+                    parent_id: None,
                 });
                 // Track for potential updates
                 self.current_tool = Some(ToolCallInfo {
@@ -401,6 +405,7 @@ impl App {
                             },
                         },
                         timestamp: self.agent_timestamp.clone(),
+                        parent_id: None,
                     });
                 }
                 self.current_tool = None;
@@ -416,6 +421,7 @@ impl App {
                     role: MessageRole::Agent,
                     content: MessageContent::Error(err),
                     timestamp: self.agent_timestamp.clone(),
+                    parent_id: None,
                 });
             }
         }
@@ -429,6 +435,7 @@ impl App {
                 role: MessageRole::Agent,
                 content: MessageContent::Thinking(self.thinking_text.clone()),
                 timestamp: self.agent_timestamp.clone(),
+                parent_id: None,
             });
             // Default to collapsed for thinking messages
             self.collapsed_thinking.insert(idx);
@@ -464,6 +471,7 @@ impl App {
                     status: tool.status,
                 },
                 timestamp: self.agent_timestamp.clone(),
+                parent_id: None,
             });
         }
     }
@@ -598,8 +606,8 @@ impl App {
         let version_num_style = Style::default().fg(self.theme.status).add_modifier(Modifier::BOLD);
         let line1 = Line::from(vec![
             Span::styled(" 🦑 Nano", logo),
-            Span::styled("GridBot", white.clone()),
-            Span::styled(" v", version_num_style.clone()),
+            Span::styled("GridBot", white),
+            Span::styled(" v", version_num_style),
             Span::styled(version, version_num_style),
         ]);
 
@@ -615,7 +623,7 @@ impl App {
             })
             .unwrap_or_else(|_| "Unknown".to_string());
         let line2 = Line::from(vec![
-            Span::styled("    ", path_style.clone()),
+            Span::styled("    ", path_style),
             Span::styled(cwd, path_style),
         ]);
 
@@ -951,6 +959,7 @@ impl App {
                         role: MessageRole::User,
                         content: MessageContent::Text(msg_content),
                         timestamp: chrono::Local::now().format("%H:%M").to_string(),
+                        parent_id: None,
                     });
                     self.cursor_position = 0;
                     self.input_mode = InputMode::SingleLine;

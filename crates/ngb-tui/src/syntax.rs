@@ -10,11 +10,11 @@ use syntect::parsing::SyntaxSet;
 
 /// Default syntax set with common languages
 pub static SYNTAX_SET: LazyLock<SyntaxSet> =
-    LazyLock::new(|| SyntaxSet::load_defaults_newlines());
+    LazyLock::new(SyntaxSet::load_defaults_newlines);
 
 /// Default theme set (base16-ocean.dark)
 pub static THEME_SET: LazyLock<ThemeSet> =
-    LazyLock::new(|| ThemeSet::load_defaults());
+    LazyLock::new(ThemeSet::load_defaults);
 
 /// Get the default theme for terminal
 pub fn get_theme() -> &'static Theme {
