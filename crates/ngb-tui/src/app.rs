@@ -189,23 +189,21 @@ pub enum ToolStatus {
 
 /// 初始欢迎信息 - 方便后续修改
 /// 初始欢迎信息 - 使用 Line 数组确保缩进正确
-fn welcome_lines() -> Vec<Line<'static>> {
+/// 从用户文件读取欢迎信息，如果文件不存在则返回空
+fn welcome_lines_from_file(path: &std::path::Path) -> Vec<Line<'static>> {
     use ratatui::text::Line;
     use ratatui::style::Style;
 
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
     let style = Style::default().dim();
-    vec![
-        Line::from(vec![Span::raw("  Start chatting with NanoGridBot")]).style(style),
-        Line::from(vec![Span::raw("")]).style(style),
-        Line::from(vec![Span::raw("  Commands:")]).style(style),
-        Line::from(vec![Span::raw("    /help  - show all commands")]).style(style),
-        Line::from(vec![Span::raw("    /ls    - list workspace files")]).style(style),
-        Line::from(vec![Span::raw("")]).style(style),
-        Line::from(vec![Span::raw("  Shortcuts:")]).style(style),
-        Line::from(vec![Span::raw("    Enter     - send message")]).style(style),
-        Line::from(vec![Span::raw("    Ctrl+C    - clear chat")]).style(style),
-        Line::from(vec![Span::raw("    2×Ctrl+C  - quit")]).style(style),
-    ]
+    content
+        .lines()
+        .map(|line| Line::from(vec![Span::raw(line.to_string())]).style(style))
+        .collect()
 }
 
 impl App {
@@ -638,7 +636,13 @@ impl App {
         let theme = self.theme.clone();
         let items: Vec<ListItem> = if messages.is_empty() {
             let dim = Style::default().fg(self.theme.secondary).dim();
-            vec![ListItem::new(welcome_lines()).style(dim)]
+            let welcome_path = std::path::Path::new("welcome.txt");
+            let lines = welcome_lines_from_file(welcome_path);
+            if lines.is_empty() {
+                Vec::new()
+            } else {
+                vec![ListItem::new(lines).style(dim)]
+            }
         } else {
             messages
                 .iter()

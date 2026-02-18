@@ -162,18 +162,23 @@ make install
 
 ## TUI UI 改进 (本会话)
 
-- ✅ Header 样式优化：
-  - 单行显示，无边框
-  - 🦑 NanoGridBot 彩色显示（Nano 青色，GridBot 白色加粗）
-  - 用 `|` 分隔，后面 workspace 信息使用 status 区颜色
+- ✅ Header 双行布局：
+  - 第一行：🦑 NanoGridBot + 版本号（版本号使用状态区颜色）
+  - 第二行：当前目录路径（~风格，与 NanoGridBot 列对齐）
 
 - ✅ Ctrl+C 快捷键行为修改（参考 Claude Code）：
   - 有输入时：清空输入框
   - 正在运行：中断当前指令
   - 2秒内连续两次 Ctrl+C：退出 TUI
 
+- ✅ 初始欢迎信息重构：
+  - 从 welcome.txt 文件读取（纯用户文件方案）
+  - 显示 Commands 和 Shortcuts 两部分
+  - 方便后续修改
+
 **修改文件**:
 - `crates/ngb-tui/src/app.rs`
+- `crates/ngb-tui/welcome.txt` (新建)
 
 ## 下一步
 

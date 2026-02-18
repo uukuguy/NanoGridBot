@@ -1,0 +1,10 @@
+  Start chatting with NanoGridBot
+
+  Commands:
+    /help  - show all commands
+    /ls    - list workspace files
+
+  Shortcuts:
+    Enter     - send message
+    Ctrl+C    - clear chat
+    2×Ctrl+C  - quit
