@@ -803,7 +803,7 @@ impl App {
                 }
             }
             KeyCode::Right => {
-                if self.cursor_position < self.input.len() {
+                if self.cursor_position < self.input.chars().count() {
                     self.cursor_position += 1;
                 }
             }
@@ -811,31 +811,39 @@ impl App {
                 self.cursor_position = 0;
             }
             KeyCode::End => {
-                self.cursor_position = self.input.len();
+                self.cursor_position = self.input.chars().count();
             }
             // Character input
             KeyCode::Char(c) => {
-                let pos = self.cursor_position.min(self.input.len());
-                self.input.insert(pos, c);
+                // Convert char index to byte index
+                let char_idx = self.cursor_position.min(self.input.chars().count());
+                let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
+                self.input.insert(byte_idx, c);
                 self.cursor_position += 1;
             }
             KeyCode::Backspace => {
                 if self.cursor_position > 0 {
                     self.cursor_position -= 1;
-                    let pos = self.cursor_position;
-                    self.input.remove(pos);
+                    // Convert char index to byte index
+                    let char_idx = self.cursor_position;
+                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(0);
+                    self.input.remove(byte_idx);
                 }
             }
             KeyCode::Delete => {
-                if self.cursor_position < self.input.len() {
-                    self.input.remove(self.cursor_position);
+                if self.cursor_position < self.input.chars().count() {
+                    // Convert char index to byte index
+                    let char_idx = self.cursor_position;
+                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
+                    self.input.remove(byte_idx);
                 }
             }
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     // Shift+Enter: insert newline
-                    let pos = self.cursor_position.min(self.input.len());
-                    self.input.insert(pos, '\n');
+                    let char_idx = self.cursor_position.min(self.input.chars().count());
+                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
+                    self.input.insert(byte_idx, '\n');
                     self.cursor_position += 1;
                     self.input_mode = InputMode::MultiLine;
                 } else if !self.input.is_empty() {
