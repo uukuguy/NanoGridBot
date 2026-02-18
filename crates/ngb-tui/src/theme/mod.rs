@@ -61,9 +61,9 @@ impl IconSet {
     /// Modern Unicode icons (default)
     pub fn modern() -> Self {
         Self {
-            user: "👤",
-            agent: "🤖",
-            system: "ℹ️",
+            user: "▸",
+            agent: "▸",
+            system: "▸",
             spinner: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
             tool_running: "⚙",
             tool_success: "✓",
@@ -103,9 +103,9 @@ impl IconSet {
     /// Box drawing characters (retro terminal)
     pub fn box_drawing() -> Self {
         Self {
-            user: "│",
-            agent: "▣",
-            system: "◉",
+            user: "▶",
+            agent: "▶",
+            system: "▶",
             spinner: ["◐", "◑", "◒", "◓", "◐", "◑", "◒", "◓", "◐", "◑"],
             tool_running: "◌",
             tool_success: "◉",
@@ -124,9 +124,9 @@ impl IconSet {
     /// Cute animal icons
     pub fn cute() -> Self {
         Self {
-            user: "🧑",
-            agent: "🤖",
-            system: "📢",
+            user: "◉",
+            agent: "◉",
+            system: "◉",
             spinner: ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘", "🌑", "🌚"],
             tool_running: "🔧",
             tool_success: "✅",
