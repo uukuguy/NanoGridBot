@@ -610,19 +610,21 @@ impl App {
         use ratatui::style::Style;
 
         let icons = &theme.icons;
+        let spacer = "\n";
+
         match msg.role {
             MessageRole::User => {
                 let content = match &msg.content {
-                    MessageContent::Text(text) => format!("{} {}  {}", icons.user, text, msg.timestamp),
-                    _ => msg.timestamp.clone(),
+                    MessageContent::Text(text) => format!("{} {}  {}{}{}", icons.user, text, msg.timestamp, spacer, spacer),
+                    _ => format!("{}{}", msg.timestamp, spacer),
                 };
                 ListItem::new(content)
                     .style(Style::default().fg(theme.user_message).italic())
             }
             MessageRole::Agent => {
-                let prefix = format!("{} {}  {}", icons.agent, icons.agent, msg.timestamp);
+                let prefix = format!("{} {}  {}{}", icons.agent, icons.agent, msg.timestamp, spacer);
                 match &msg.content {
-                    MessageContent::Text(text) => ListItem::new(format!("{}\n{}", prefix, text))
+                    MessageContent::Text(text) => ListItem::new(format!("{}{}{}", prefix, text, spacer))
                         .style(Style::default().fg(theme.agent_message)),
                     MessageContent::Thinking(text) => {
                         let preview = if collapsed {
@@ -630,7 +632,7 @@ impl App {
                         } else {
                             text.clone()
                         };
-                        ListItem::new(format!("{} {} {}\n{}", prefix, icons.agent, icons.agent, preview))
+                        ListItem::new(format!("{}{} {}{}{}", prefix, icons.agent, icons.agent, preview, spacer))
                             .style(Style::default().fg(theme.thinking))
                     }
                     MessageContent::ToolCall { name, status } => {
@@ -644,16 +646,17 @@ impl App {
                             ToolStatus::Success => theme.tool_success,
                             ToolStatus::Error => theme.tool_error,
                         };
-                        ListItem::new(format!("{} {} {}{}", prefix, icons.arrow, name, status_icon))
+                        ListItem::new(format!("{}{} {}{}{}", prefix, icons.arrow, name, status_icon, spacer))
                             .style(Style::default().fg(color))
                     }
                     MessageContent::CodeBlock { language, code } => {
-                        ListItem::new(format!("{}\n  {}{} {} {}\n{}\n  {}",
-                            prefix, icons.code_block, language, icons.code_block, icons.code_block, code, icons.code_block))
+                        let cb = icons.code_block;
+                        let block = format!("{} {} {}\n{}\n", cb, language, cb, code);
+                        ListItem::new(format!("{}{}{}", prefix, block, spacer))
                             .style(Style::default().fg(theme.warning))
                     }
                     MessageContent::Error(err) => {
-                        ListItem::new(format!("{} {} Error: {}", prefix, icons.cross, err))
+                        ListItem::new(format!("{}{} Error: {}{}", prefix, icons.cross, err, spacer))
                             .style(Style::default().fg(theme.error))
                     }
                 }
