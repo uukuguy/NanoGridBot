@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 6 ✅ 完成 (部分)
+**Phase**: NGB Shell TUI Phase 6 ✅ 完成
 **Date**: 2026-02-18
 **Branch**: build-by-rust
 **Tests**: 197 passing, zero clippy warnings
@@ -130,11 +130,16 @@ ngb shell <workspace> --transport ws --theme tokyo-night
 ## 已完成 (Phase 6)
 
 - ✅ Task 6.1: CLI 参数集成 (ngb shell --transport --theme)
+- ✅ Bug fixes: 事件循环双键输入、UTF-8字符边界、Unicode宽度计算
+- ✅ UI改进: 图标系统IconSet、消息间距调整
 
 **新增/修改文件**:
-- `crates/ngb-tui/src/app.rs` (添加 AppConfig 结构体和构建器方法)
-- `crates/ngb-tui/src/lib.rs` (导出 AppConfig)
-- `crates/ngb-cli/src/main.rs` (添加 shell 命令和参数解析)
+- `crates/ngb-tui/src/app.rs` (AppConfig、bug修复、图标、间距)
+- `crates/ngb-tui/src/lib.rs` (导出 AppConfig, IconSet)
+- `crates/ngb-tui/src/theme/mod.rs` (IconSet 结构体 + 4套图标)
+- `crates/ngb-tui/Cargo.toml` (添加 unicode-width 依赖)
+- `crates/ngb-cli/src/main.rs` (shell 命令)
+- `Makefile` (install, shell 命令)
 
 **CLI 命令示例**:
 ```bash
@@ -149,7 +154,10 @@ ngb shell my-workspace --transport ws
 # 指定主题
 ngb shell my-workspace --theme catppuccin-mocha
 ngb shell my-workspace --theme kanagawa
-ngb shell my-workspace --transport ws --theme tokyo-night
+
+# Makefile
+make shell WORKSPACE=my-workspace
+make install
 ```
 
 ## 下一步
@@ -157,11 +165,10 @@ ngb shell my-workspace --transport ws --theme tokyo-night
 **TUI 6 Phase 全部完成**，NGB Shell TUI MVP 已就绪！
 
 **可选后续任务**:
+- 与容器启动流程集成（真正的 agent 响应）
 - 错误处理增强
 - 状态栏完善
-- 与容器启动流程集成
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`
-- 现有 crate: `crates/ngb-cli/`
-- 可运行: `cargo run -p ngb-cli -- shell <workspace>`
+- 可运行: `make shell WORKSPACE=xxx`
