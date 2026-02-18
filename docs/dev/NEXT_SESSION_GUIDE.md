@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 2 ✅ 完成
+**Phase**: NGB Shell TUI Phase 3 ✅ 完成
 **Date**: 2026-02-18
 **Branch**: build-by-rust
 **Tests**: 197 passing, zero clippy warnings
@@ -90,12 +90,21 @@ ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 - `crates/ngb-tui/Cargo.toml` (添加 pulldown-cmark 依赖)
 - `crates/ngb-tui/src/app.rs` (完整重写，添加消息类型、滚动、输入处理)
 
+## 已完成 (Phase 3)
+
+- ✅ Task 3.1: OutputChunk 解析 (Transport stream 集成，mpsc channel 桥接)
+- ✅ Task 3.2: Thinking 折叠块 (collapsed_thinking HashSet，Tab 键切换)
+- ✅ Task 3.3: 工具调用状态行 (ToolStart 显示⠙，ToolEnd 更新为✓/✗)
+
+**修改文件**:
+- `crates/ngb-tui/src/app.rs` (添加 transport/stream/collapse 支持)
+
 ## 下一步
 
-**Phase 3: CC 状态感知**:
-- Task 3.1: OutputChunk 解析
-- Task 3.2: Thinking 折叠块
-- Task 3.3: 工具调用状态行
+**Phase 4: 主题 + 键绑定**:
+- Task 4.1: 主题系统抽象
+- Task 4.2: 预置 8 主题
+- Task 4.3: Vim 模式键绑定
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`

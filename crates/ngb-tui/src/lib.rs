@@ -6,9 +6,7 @@
 pub mod app;
 pub mod transport;
 
-pub use app::{
-    App, InputMode, Message, MessageContent, MessageRole, ToolStatus,
-};
+pub use app::{App, InputMode, Message, MessageContent, MessageRole, ToolStatus};
 pub use transport::{OutputChunk, Transport, IPC_TRANSPORT, PIPE_TRANSPORT, WS_TRANSPORT};
 
 /// Entry point for running the NGB Shell TUI

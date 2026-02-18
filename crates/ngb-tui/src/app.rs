@@ -1,6 +1,7 @@
 //! Application state and main event loop
 
 use anyhow::Result;
+use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -19,8 +20,12 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
+use crate::transport::{OutputChunk, Transport};
+use tokio::sync::mpsc;
+
 pub struct App {
     /// Whether to quit the application
+    #[allow(dead_code)]
     pub quit: bool,
     /// Current workspace name
     pub workspace: String,
@@ -36,6 +41,26 @@ pub struct App {
     pub cursor_position: usize,
     /// Input mode (single line or multiline)
     pub input_mode: InputMode,
+    /// Transport for communicating with Claude Code (used for sending messages)
+    #[allow(dead_code)]
+    transport: Option<Box<dyn Transport>>,
+    /// Current thinking text (accumulated while thinking)
+    thinking_text: String,
+    /// Whether thinking is currently collapsed
+    thinking_collapsed: bool,
+    /// Current tool call being tracked
+    current_tool: Option<ToolCallInfo>,
+    /// Timestamp for current agent message
+    agent_timestamp: String,
+    /// Channel receiver for transport output chunks
+    chunk_receiver: Option<mpsc::Receiver<OutputChunk>>,
+    /// Set of message indices that have thinking collapsed
+    collapsed_thinking: std::collections::HashSet<usize>,
+}
+
+struct ToolCallInfo {
+    name: String,
+    status: ToolStatus,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -86,7 +111,200 @@ impl App {
             chat_state,
             cursor_position: 0,
             input_mode: InputMode::SingleLine,
+            transport: None,
+            thinking_text: String::new(),
+            thinking_collapsed: false,
+            current_tool: None,
+            agent_timestamp: chrono::Local::now().format("%H:%M").to_string(),
+            chunk_receiver: None,
+            collapsed_thinking: std::collections::HashSet::new(),
         })
+    }
+
+    /// Set the transport for communicating with Claude Code and start processing
+    pub fn set_transport(&mut self, transport: Box<dyn Transport>) {
+        // Create a channel for passing chunks from async transport to sync event loop
+        let (tx, rx) = mpsc::channel(100);
+        self.chunk_receiver = Some(rx);
+
+        // Spawn a task to process the transport stream
+        let transport = transport;
+        tokio::spawn(async move {
+            let mut transport = transport;
+            let mut stream = transport.recv_stream();
+
+            while let Some(chunk) = stream.next().await {
+                if tx.send(chunk).await.is_err() {
+                    // Receiver dropped, stop processing
+                    break;
+                }
+            }
+        });
+    }
+
+    /// Process a single OutputChunk and update app state
+    fn process_chunk(&mut self, chunk: OutputChunk) {
+        match chunk {
+            OutputChunk::Text(text) => {
+                // Finalize any pending thinking/tool states
+                self.finalize_thinking();
+                self.finalize_tool();
+
+                // Add text to current agent message or create new one
+                if let Some(last_msg) = self.messages.last_mut() {
+                    if last_msg.role == MessageRole::Agent {
+                        if let MessageContent::Text(existing) = &mut last_msg.content {
+                            existing.push_str(&text);
+                            return;
+                        }
+                    }
+                }
+
+                // Create new agent message
+                self.messages.push(Message {
+                    role: MessageRole::Agent,
+                    content: MessageContent::Text(text),
+                    timestamp: self.agent_timestamp.clone(),
+                });
+            }
+            OutputChunk::ThinkingStart => {
+                self.thinking_text.clear();
+                self.agent_timestamp = chrono::Local::now().format("%H:%M").to_string();
+            }
+            OutputChunk::ThinkingText(text) => {
+                self.thinking_text.push_str(&text);
+                self.thinking_text.push('\n');
+            }
+            OutputChunk::ThinkingEnd => {
+                // Keep thinking text for display, user can collapse it
+            }
+            OutputChunk::ToolStart { name, args: _ } => {
+                self.finalize_thinking();
+                // Show running tool immediately so user sees progress
+                self.messages.push(Message {
+                    role: MessageRole::Agent,
+                    content: MessageContent::ToolCall {
+                        name: name.clone(),
+                        status: ToolStatus::Running,
+                    },
+                    timestamp: self.agent_timestamp.clone(),
+                });
+                // Track for potential updates
+                self.current_tool = Some(ToolCallInfo {
+                    name,
+                    status: ToolStatus::Running,
+                });
+            }
+            OutputChunk::ToolEnd { name, success } => {
+                // Find and update the last running tool message with matching name
+                let mut updated = false;
+                if let Some(tool_name) = self.current_tool.as_ref().map(|t| t.name.clone()) {
+                    if tool_name == name {
+                        // Update the last running message
+                        for msg in self.messages.iter_mut().rev() {
+                            if let MessageContent::ToolCall { name: n, status } = &mut msg.content {
+                                if *n == name && *status == ToolStatus::Running {
+                                    *status = if success {
+                                        ToolStatus::Success
+                                    } else {
+                                        ToolStatus::Error
+                                    };
+                                    updated = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // If we didn't update an existing message, create a new one
+                if !updated {
+                    self.messages.push(Message {
+                        role: MessageRole::Agent,
+                        content: MessageContent::ToolCall {
+                            name,
+                            status: if success {
+                                ToolStatus::Success
+                            } else {
+                                ToolStatus::Error
+                            },
+                        },
+                        timestamp: self.agent_timestamp.clone(),
+                    });
+                }
+                self.current_tool = None;
+            }
+            OutputChunk::Done => {
+                self.finalize_thinking();
+                self.finalize_tool();
+            }
+            OutputChunk::Error(err) => {
+                self.finalize_thinking();
+                self.finalize_tool();
+                self.messages.push(Message {
+                    role: MessageRole::Agent,
+                    content: MessageContent::Error(err),
+                    timestamp: self.agent_timestamp.clone(),
+                });
+            }
+        }
+    }
+
+    /// Finalize any pending thinking as a message
+    fn finalize_thinking(&mut self) {
+        if !self.thinking_text.is_empty() {
+            let idx = self.messages.len();
+            self.messages.push(Message {
+                role: MessageRole::Agent,
+                content: MessageContent::Thinking(self.thinking_text.clone()),
+                timestamp: self.agent_timestamp.clone(),
+            });
+            // Default to collapsed for thinking messages
+            self.collapsed_thinking.insert(idx);
+            self.thinking_text.clear();
+        }
+    }
+
+    /// Toggle collapse state for a specific message (if it's a thinking message)
+    pub fn toggle_message_collapse(&mut self, index: usize) {
+        if index < self.messages.len() {
+            if let MessageContent::Thinking(_) = &self.messages[index].content {
+                if self.collapsed_thinking.contains(&index) {
+                    self.collapsed_thinking.remove(&index);
+                } else {
+                    self.collapsed_thinking.insert(index);
+                }
+            }
+        }
+    }
+
+    /// Check if a message is collapsed
+    pub fn is_message_collapsed(&self, index: usize) -> bool {
+        self.collapsed_thinking.contains(&index)
+    }
+
+    /// Finalize any pending tool call
+    fn finalize_tool(&mut self) {
+        if let Some(tool) = self.current_tool.take() {
+            self.messages.push(Message {
+                role: MessageRole::Agent,
+                content: MessageContent::ToolCall {
+                    name: tool.name,
+                    status: tool.status,
+                },
+                timestamp: self.agent_timestamp.clone(),
+            });
+        }
+    }
+
+    /// Toggle thinking block collapse state
+    pub fn toggle_thinking_collapse(&mut self) {
+        self.thinking_collapsed = !self.thinking_collapsed;
+    }
+
+    /// Check if thinking is collapsed
+    pub fn is_thinking_collapsed(&self) -> bool {
+        self.thinking_collapsed
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -113,6 +331,21 @@ impl App {
     ) -> Result<()> {
         loop {
             terminal.draw(|f| self.draw(f))?;
+
+            // Process any available chunks from the transport
+            let chunks: Vec<OutputChunk> = if let Some(rx) = self.chunk_receiver.as_mut() {
+                let mut collected = Vec::new();
+                while let Ok(chunk) = rx.try_recv() {
+                    collected.push(chunk);
+                }
+                collected
+            } else {
+                Vec::new()
+            };
+
+            for chunk in chunks {
+                self.process_chunk(chunk);
+            }
 
             if event::poll(Duration::from_millis(250))? {
                 if let Event::Key(key) = event::read()? {
@@ -210,7 +443,8 @@ impl App {
         } else {
             messages
                 .iter()
-                .map(|msg| Self::render_message_item_static(msg))
+                .enumerate()
+                .map(|(idx, msg)| Self::render_message_item(msg, self.is_message_collapsed(idx)))
                 .collect()
         };
 
@@ -221,7 +455,7 @@ impl App {
         f.render_stateful_widget(list, area, &mut self.chat_state);
     }
 
-    fn render_message_item_static(msg: &Message) -> ListItem<'_> {
+    fn render_message_item(msg: &Message, collapsed: bool) -> ListItem<'_> {
         use ratatui::style::Style;
 
         match msg.role {
@@ -241,7 +475,13 @@ impl App {
                     MessageContent::Text(text) => ListItem::new(format!("{}\n{}", prefix, text))
                         .style(Style::default().fg(ratatui::style::Color::LightGreen)),
                     MessageContent::Thinking(text) => {
-                        ListItem::new(format!("{} ▸ Thinking... {}", prefix, text))
+                        let arrow = if collapsed { "▸" } else { "▾" };
+                        let preview = if collapsed {
+                            format!("[{} collapsed, press Tab to expand]", text.lines().count())
+                        } else {
+                            text.clone()
+                        };
+                        ListItem::new(format!("{} {} Thinking...\n{}", prefix, arrow, preview))
                             .style(Style::default().fg(ratatui::style::Color::Yellow))
                     }
                     MessageContent::ToolCall { name, status } => {
@@ -345,6 +585,12 @@ impl App {
         }
 
         match key.code {
+            KeyCode::Tab => {
+                // Tab: toggle collapse on selected message
+                if let Some(selected) = self.chat_state.selected() {
+                    self.toggle_message_collapse(selected);
+                }
+            }
             KeyCode::Char('q') => {
                 self.quit = true;
             }
