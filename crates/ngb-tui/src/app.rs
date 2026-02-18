@@ -494,12 +494,14 @@ impl App {
             }
 
             if event::poll(Duration::from_millis(250))? {
-                if let Event::Key(key) = event::read()? {
-                    self.handle_key(key);
-                }
-                // Handle mouse events for scrolling
-                if let Event::Mouse(mouse) = event::read()? {
-                    self.handle_mouse(mouse);
+                match event::read()? {
+                    Event::Key(key) => {
+                        self.handle_key(key);
+                    }
+                    Event::Mouse(mouse) => {
+                        self.handle_mouse(mouse);
+                    }
+                    _ => {}
                 }
             }
 
