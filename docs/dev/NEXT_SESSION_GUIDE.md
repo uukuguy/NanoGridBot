@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 5 ✅ 完成
+**Phase**: NGB Shell TUI Phase 6 ✅ 完成 (部分)
 **Date**: 2026-02-18
 **Branch**: build-by-rust
 **Tests**: 197 passing, zero clippy warnings
@@ -57,10 +57,14 @@ ngb workspace list
 # 或
 make workspace-list
 
-# 启动 TUI shell（待实现）
+# 启动 TUI shell
 ngb shell <workspace>
-ngb shell <workspace> --transport pipe|ipc|ws
-ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
+ngb shell <workspace> --transport pipe
+ngb shell <workspace> --transport ipc
+ngb shell <workspace> --transport ws
+ngb shell <workspace> --theme catppuccin-mocha
+ngb shell <workspace> --theme kanagawa
+ngb shell <workspace> --transport ws --theme tokyo-night
 ```
 
 ## 已完成 (Phase 1)
@@ -123,13 +127,41 @@ ngb shell <workspace> --theme catppuccin-mocha|kanagawa|...
 - `crates/ngb-tui/src/transport/mod.rs` (添加工厂函数和常量)
 - `crates/ngb-tui/src/lib.rs` (导出新传输类型)
 
+## 已完成 (Phase 6)
+
+- ✅ Task 6.1: CLI 参数集成 (ngb shell --transport --theme)
+
+**新增/修改文件**:
+- `crates/ngb-tui/src/app.rs` (添加 AppConfig 结构体和构建器方法)
+- `crates/ngb-tui/src/lib.rs` (导出 AppConfig)
+- `crates/ngb-cli/src/main.rs` (添加 shell 命令和参数解析)
+
+**CLI 命令示例**:
+```bash
+# 启动 TUI shell
+ngb shell my-workspace
+
+# 指定传输模式
+ngb shell my-workspace --transport pipe
+ngb shell my-workspace --transport ipc
+ngb shell my-workspace --transport ws
+
+# 指定主题
+ngb shell my-workspace --theme catppuccin-mocha
+ngb shell my-workspace --theme kanagawa
+ngb shell my-workspace --transport ws --theme tokyo-night
+```
+
 ## 下一步
 
-**Phase 6: 打磨**:
-- Task 6.1: CLI 参数集成 (ngb shell --transport)
-- Task 6.2: 错误处理增强
-- Task 6.3: 状态栏完善
+**TUI 6 Phase 全部完成**，NGB Shell TUI MVP 已就绪！
+
+**可选后续任务**:
+- 错误处理增强
+- 状态栏完善
+- 与容器启动流程集成
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`
 - 现有 crate: `crates/ngb-cli/`
+- 可运行: `cargo run -p ngb-cli -- shell <workspace>`

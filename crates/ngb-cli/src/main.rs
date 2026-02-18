@@ -7,6 +7,7 @@ use ngb_config::Config;
 use ngb_core::ipc_handler::ChannelSender;
 use ngb_core::Orchestrator;
 use ngb_db::{BindingRepository, Database, TokenRepository, WorkspaceRepository};
+use ngb_tui::{AppConfig, ThemeName, PIPE_TRANSPORT, IPC_TRANSPORT, WS_TRANSPORT};
 use ngb_types::Workspace;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -27,6 +28,17 @@ enum Commands {
         #[command(subcommand)]
         action: WorkspaceAction,
     },
+    /// Start the TUI shell
+    Shell {
+        /// Workspace name to connect to
+        workspace: String,
+        /// Transport mode: pipe, ipc, or ws
+        #[arg(long, default_value = "pipe")]
+        transport: String,
+        /// Theme name: catppuccin-mocha, catppuccin-latte, kanagawa, rose-pine, rose-pine-dawn, tokyo-night, midnight, terminal
+        #[arg(long)]
+        theme: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -46,7 +58,58 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Serve => serve().await?,
         Commands::Workspace { action } => workspace(action).await?,
+        Commands::Shell {
+            workspace,
+            transport,
+            theme,
+        } => shell(workspace, transport, theme)?,
     }
+    Ok(())
+}
+
+fn shell(workspace: String, transport: String, theme: Option<String>) -> anyhow::Result<()> {
+    // Parse transport kind
+    let transport_kind = match transport.as_str() {
+        "pipe" => PIPE_TRANSPORT,
+        "ipc" => IPC_TRANSPORT,
+        "ws" => WS_TRANSPORT,
+        _ => bail!("Invalid transport: {}. Use pipe, ipc, or ws", transport),
+    };
+
+    // Parse theme
+    let theme_name = if let Some(t) = theme {
+        match t.as_str() {
+            "catppuccin-mocha" => ThemeName::CatppuccinMocha,
+            "catppuccin-latte" => ThemeName::CatppuccinLatte,
+            "kanagawa" => ThemeName::Kanagawa,
+            "rose-pine" => ThemeName::RosePine,
+            "rose-pine-dawn" => ThemeName::RosePineDawn,
+            "tokyo-night" => ThemeName::TokyoNight,
+            "midnight" => ThemeName::Midnight,
+            "terminal" => ThemeName::Terminal,
+            _ => bail!(
+                "Invalid theme: {}. Use catppuccin-mocha, catppuccin-latte, kanagawa, rose-pine, rose-pine-dawn, tokyo-night, midnight, or terminal",
+                t
+            ),
+        }
+    } else {
+        ThemeName::CatppuccinMocha
+    };
+
+    // Load config for data directory
+    let config = Config::load().context("Failed to load configuration")?;
+    let data_dir = config.store_dir.join("workspaces").join(&workspace);
+
+    // Create app config and run
+    let app_config = AppConfig::new(workspace)
+        .with_transport(transport_kind)
+        .with_theme(theme_name)
+        .with_data_dir(data_dir)
+        .with_image(&config.container_image);
+
+    let mut app = ngb_tui::App::with_config(app_config)?;
+    app.run()?;
+
     Ok(())
 }
 

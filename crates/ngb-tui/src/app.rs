@@ -21,8 +21,79 @@ use crossterm::{
 };
 
 use crate::theme::{Theme, ThemeName};
-use crate::transport::{OutputChunk, Transport};
+use crate::transport::{create_transport, OutputChunk, Transport, PIPE_TRANSPORT, TransportKind};
+use std::path::PathBuf;
 use tokio::sync::mpsc;
+
+/// Configuration for the TUI application
+#[derive(Debug, Clone)]
+pub struct AppConfig {
+    /// Workspace name to connect to
+    pub workspace: String,
+    /// Transport kind (pipe, ipc, or ws)
+    pub transport_kind: TransportKind,
+    /// Container image name
+    pub image: String,
+    /// Data directory for IPC/WS
+    pub data_dir: PathBuf,
+    /// WebSocket URL (for ws transport)
+    pub ws_url: Option<String>,
+    /// Theme name
+    pub theme_name: ThemeName,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            workspace: String::new(),
+            transport_kind: PIPE_TRANSPORT,
+            image: "claude-code:latest".to_string(),
+            data_dir: PathBuf::from("./data"),
+            ws_url: None,
+            theme_name: ThemeName::CatppuccinMocha,
+        }
+    }
+}
+
+impl AppConfig {
+    /// Create a new config with required workspace
+    pub fn new(workspace: impl Into<String>) -> Self {
+        Self {
+            workspace: workspace.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Set transport kind
+    pub fn with_transport(mut self, kind: TransportKind) -> Self {
+        self.transport_kind = kind;
+        self
+    }
+
+    /// Set theme
+    pub fn with_theme(mut self, name: ThemeName) -> Self {
+        self.theme_name = name;
+        self
+    }
+
+    /// Set container image
+    pub fn with_image(mut self, image: impl Into<String>) -> Self {
+        self.image = image.into();
+        self
+    }
+
+    /// Set data directory
+    pub fn with_data_dir(mut self, dir: PathBuf) -> Self {
+        self.data_dir = dir;
+        self
+    }
+
+    /// Set WebSocket URL
+    pub fn with_ws_url(mut self, url: impl Into<String>) -> Self {
+        self.ws_url = Some(url.into());
+        self
+    }
+}
 
 /// Key input mode (Emacs or Vim)
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -112,35 +183,64 @@ pub enum ToolStatus {
 }
 
 impl App {
+    /// Create a new app with default configuration
     pub fn new() -> Result<Self> {
+        Self::with_config(AppConfig::default())
+    }
+
+    /// Create a new app with custom configuration
+    pub fn with_config(config: AppConfig) -> Result<Self> {
         let mut chat_state = ListState::default();
         chat_state.select(Some(0));
+
+        // Create transport if workspace is specified
+        let transport = if config.workspace.is_empty() {
+            None
+        } else {
+            match create_transport(
+                config.transport_kind,
+                &config.workspace,
+                &config.image,
+                config.data_dir.clone(),
+                config.ws_url.clone(),
+            ) {
+                Ok(t) => Some(t),
+                Err(e) => {
+                    tracing::warn!(
+                        workspace = %config.workspace,
+                        transport = ?config.transport_kind,
+                        error = %e,
+                        "Failed to create transport, running in offline mode"
+                    );
+                    None
+                }
+            }
+        };
+
         Ok(Self {
             quit: false,
-            workspace: String::new(),
+            workspace: config.workspace,
             messages: Vec::new(),
             input: String::new(),
             scroll: 0,
             chat_state,
             cursor_position: 0,
             input_mode: InputMode::SingleLine,
-            transport: None,
+            transport,
             thinking_text: String::new(),
             thinking_collapsed: false,
             current_tool: None,
             agent_timestamp: chrono::Local::now().format("%H:%M").to_string(),
             chunk_receiver: None,
             collapsed_thinking: std::collections::HashSet::new(),
-            theme: Theme::default(),
+            theme: Theme::from_name(config.theme_name),
             key_mode: KeyMode::default(),
         })
     }
 
-    /// Create a new app with a specific theme
+    /// Create a new app with a specific theme (deprecated, use with_config)
     pub fn with_theme(theme_name: ThemeName) -> Result<Self> {
-        let mut app = Self::new()?;
-        app.theme = Theme::from_name(theme_name);
-        Ok(app)
+        Self::with_config(AppConfig::default().with_theme(theme_name))
     }
 
     /// Set the theme
