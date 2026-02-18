@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: NGB Shell TUI Phase 6 ✅ 完成
+**Phase**: TUI UI 改进 ✅ 完成
 **Date**: 2026-02-18
 **Branch**: build-by-rust
 **Tests**: 197 passing, zero clippy warnings
@@ -159,6 +159,21 @@ ngb shell my-workspace --theme kanagawa
 make shell WORKSPACE=my-workspace
 make install
 ```
+
+## TUI UI 改进 (本会话)
+
+- ✅ Header 样式优化：
+  - 单行显示，无边框
+  - 🦑 NanoGridBot 彩色显示（Nano 青色，GridBot 白色加粗）
+  - 用 `|` 分隔，后面 workspace 信息使用 status 区颜色
+
+- ✅ Ctrl+C 快捷键行为修改（参考 Claude Code）：
+  - 有输入时：清空输入框
+  - 正在运行：中断当前指令
+  - 2秒内连续两次 Ctrl+C：退出 TUI
+
+**修改文件**:
+- `crates/ngb-tui/src/app.rs`
 
 ## 下一步
 

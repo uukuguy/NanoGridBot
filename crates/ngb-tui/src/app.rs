@@ -2,10 +2,13 @@
 
 use anyhow::Result;
 use futures::StreamExt;
+use std::time::Instant;
+
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     prelude::Stylize,
+    text::{Line, Span},
     widgets::{List, ListItem, ListState},
     Frame,
 };
@@ -140,6 +143,8 @@ pub struct App {
     pub theme: Theme,
     /// Key input mode (Emacs or Vim)
     pub key_mode: KeyMode,
+    /// Timestamp of last Ctrl+C press (for double-Ctrl+C to quit)
+    last_ctrl_c_time: Option<Instant>,
 }
 
 struct ToolCallInfo {
@@ -211,6 +216,7 @@ impl App {
             collapsed_thinking: std::collections::HashSet::new(),
             theme: Theme::from_name(config.theme_name),
             key_mode: KeyMode::default(),
+            last_ctrl_c_time: None,
         })
     }
 
@@ -542,14 +548,14 @@ impl App {
     fn draw(&mut self, f: &mut Frame) {
         let area = f.area();
 
-        // Define layout: Header(3) + Chat(*) + Input(3) + Status(1)
+        // Define layout: Header(3) + Chat(*) + Input(3) + Status(2)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Header
                 Constraint::Min(0),    // Chat
-                Constraint::Length(3), // Input
-                Constraint::Length(1), // Status
+                Constraint::Length(3), // Input (3: top border + content + bottom border)
+                Constraint::Length(2), // Status (2 rows)
             ])
             .split(area);
 
@@ -560,18 +566,23 @@ impl App {
     }
 
     fn draw_header(&self, f: &mut Frame, area: Rect) {
-        use ratatui::style::Style;
-        use ratatui::widgets::{Block, Borders, Paragraph};
+        use ratatui::style::{Color, Modifier, Style};
+        use ratatui::widgets::{Block, Paragraph};
 
-        let text = format!(" NGB Shell ◆ workspace: {} ", self.workspace);
-        let block = Block::new()
-            .borders(Borders::ALL)
-            .title("NanoGridBot")
-            .title_style(Style::default().fg(self.theme.accent));
+        // 单行：Logo (部分颜色) + 分隔 + 状态，无边框
+        let logo = Style::default().fg(self.theme.accent).add_modifier(Modifier::BOLD);
+        let sep = Style::default().fg(self.theme.secondary);
+        let status_style = Style::default().fg(self.theme.status);  // 使用状态区颜色
 
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .style(Style::default().fg(self.theme.foreground));
+        let line = Line::from(vec![
+            Span::styled(" 🦑 Nano", logo),
+            Span::styled("GridBot", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(" | ", sep),
+            Span::styled(format!("workspace: {}", self.workspace), status_style),
+        ]);
+
+        let block = Block::new().borders(ratatui::widgets::Borders::NONE);
+        let paragraph = Paragraph::new(line).block(block);
         f.render_widget(paragraph, area);
     }
 
@@ -580,15 +591,14 @@ impl App {
         use ratatui::widgets::{Block, Borders};
 
         let block = Block::new()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.theme.border));
+            .borders(Borders::NONE);
 
         // Build message items - collect messages first to avoid borrow issues
         let messages = self.messages.clone();
         let theme = self.theme.clone();
         let items: Vec<ListItem> = if messages.is_empty() {
             vec![ListItem::new(
-                "  Start chatting with Claude Code...\n\n  Press Enter to send message, Ctrl+C to quit.",
+                "  Start chatting with Claude Code...\n\n  Press Enter to send message, Ctrl+C clear/interrupt, 2x Ctrl+C quit.",
             )
             .style(Style::default().fg(self.theme.secondary).dim())]
         } else {
@@ -668,19 +678,17 @@ impl App {
         use ratatui::style::Style;
         use ratatui::widgets::{Block, Borders};
 
+        // 上下细线
         let block = Block::new()
-            .borders(Borders::ALL)
-            .title(match self.input_mode {
-                InputMode::SingleLine => " Input ",
-                InputMode::MultiLine => " Input (Shift+Enter for newline) ",
-            })
-            .border_style(Style::default().fg(self.theme.border))
-            .title_style(Style::default().fg(self.theme.accent));
+            .borders(Borders::TOP | Borders::BOTTOM)
+            .border_style(Style::default().fg(self.theme.border));
 
+        // 添加 ❯ 前缀
+        let prefix = "❯ ";
         let text = if self.input.is_empty() {
-            " Type a message..."
+            prefix.to_string()
         } else {
-            self.input.as_str()
+            format!("{}{}", prefix, self.input.as_str())
         };
 
         let paragraph = ratatui::widgets::Paragraph::new(text)
@@ -690,17 +698,26 @@ impl App {
 
         f.render_widget(paragraph, area);
 
-        // Render cursor at position
+        // Render cursor at position (always show, even when empty)
         #[allow(deprecated)]
-        if !self.input.is_empty() && area.width > 2 {
-            // Calculate cursor X position based on display width, not character count
-            // This handles wide characters (Chinese, Japanese, Korean, emojis) correctly
-            let input_before_cursor: String = self.input.chars().take(self.cursor_position).collect();
-            let cursor_x = unicode_width::UnicodeWidthStr::width(input_before_cursor.as_str()) as u16;
-            let cursor_x = cursor_x.min(area.width - 2);
-            let x = area.x + 1 + cursor_x;
-            let y = area.y + 1;
-            f.set_cursor(x, y);
+        if area.width > 2 {
+            let prefix = "❯ ";
+            let prefix_width = unicode_width::UnicodeWidthStr::width(prefix) as u16;
+
+            if self.input.is_empty() {
+                // Empty input: show cursor at prefix end
+                let x = area.x + prefix_width;
+                let y = area.y + 1; // 第二行（内容行）
+                f.set_cursor(x, y);
+            } else {
+                // Has input: cursor at end of text
+                let input_before_cursor: String = self.input.chars().take(self.cursor_position).collect();
+                let cursor_x = unicode_width::UnicodeWidthStr::width(input_before_cursor.as_str()) as u16;
+                let cursor_x = (prefix_width + cursor_x).min(area.width - 1);
+                let x = area.x + cursor_x;
+                let y = area.y + 1; // 第二行（内容行）
+                f.set_cursor(x, y);
+            }
         }
     }
 
@@ -715,15 +732,22 @@ impl App {
         };
         let theme_name = crate::theme::theme_display_name(self.theme.name);
 
-        let text = format!(
-            " {} {} {} | {} mode | {} | {} scroll | Ctrl+C quit ",
+        // 第一行: workspace | mode | theme
+        let line1 = format!(
+            " {} {} | {} mode | {} ",
             if self.workspace.is_empty() { icons.info } else { icons.agent },
             if self.workspace.is_empty() { "no workspace" } else { &self.workspace },
-            icons.arrow,
             mode_str,
             theme_name,
+        );
+
+        // 第二行: 操作提示
+        let line2 = format!(
+            " {} scroll | Tab expand/collapse | Ctrl+C clear/interrupt | 2x Ctrl+C quit ",
             icons.arrow,
         );
+
+        let text = format!("{}\n{}", line1, line2);
 
         let paragraph = Paragraph::new(text)
             .style(Style::default().fg(self.theme.status));
@@ -790,9 +814,34 @@ impl App {
                 self.quit = true;
             }
             KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                // Ctrl+C: interrupt or quit
-                if self.input.is_empty() {
-                    self.quit = true;
+                // Ctrl+C: similar to Claude Code behavior
+                // - If has input: clear input, return to waiting state
+                // - If no input and running: interrupt current command
+                // - If no input and not running: double-Ctrl+C to quit (within 2 seconds)
+                let now = Instant::now();
+                let is_running = self.chunk_receiver.is_some();
+
+                if !self.input.is_empty() {
+                    // Has input: clear it
+                    self.input.clear();
+                    self.cursor_position = 0;
+                } else if is_running {
+                    // Running: interrupt
+                    self.chunk_receiver = None;
+                } else {
+                    // Not running: check for double-Ctrl+C
+                    if let Some(last_time) = self.last_ctrl_c_time {
+                        if now.duration_since(last_time) < Duration::from_secs(2) {
+                            // Double Ctrl+C within 2 seconds: quit
+                            self.quit = true;
+                        } else {
+                            // Too old: update time
+                            self.last_ctrl_c_time = Some(now);
+                        }
+                    } else {
+                        // First Ctrl+C
+                        self.last_ctrl_c_time = Some(now);
+                    }
                 }
             }
             KeyCode::Char('l') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {

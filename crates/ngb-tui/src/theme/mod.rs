@@ -61,9 +61,9 @@ impl IconSet {
     /// Modern Unicode icons (default)
     pub fn modern() -> Self {
         Self {
-            user: "▸",
-            agent: "▸",
-            system: "▸",
+            user: "●",
+            agent: "○",
+            system: "◇",
             spinner: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
             tool_running: "⚙",
             tool_success: "✓",
@@ -198,8 +198,8 @@ impl Theme {
             secondary: Color::Rgb(0x6c, 0x70, 0x86),
             bubble: Color::Rgb(0x45, 0x47, 0x5a),
             code_background: Color::Rgb(0x18, 0x18, 0x25),
-            user_message: Color::Rgb(0x94, 0xe2, 0xd5),
-            agent_message: Color::Rgb(0xa6, 0xe3, 0xa1),
+            user_message: Color::Rgb(0x89, 0xb4, 0xfa), // 蓝色 - 鲜明易定位
+            agent_message: Color::Rgb(0xcd, 0xd6, 0xf4), // 浅灰白 - 柔和适合阅读
             thinking: Color::Rgb(0xf9, 0xe2, 0xaf),
             tool_running: Color::Rgb(0xf9, 0xe2, 0xaf),
             tool_success: Color::Rgb(0xa6, 0xe3, 0xa1),
