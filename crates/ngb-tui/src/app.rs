@@ -862,7 +862,9 @@ impl App {
         for line in input_text.split('\n') {
             let line_width = unicode_width::UnicodeWidthStr::width(line);
             if input_text_width > 0 && line_width > 0 {
-                wrapped_lines += ((line_width as f32 / input_text_width as f32).ceil() as u16).max(1);
+                // Use (line_width - 1) to handle boundary: when content exactly fills a line,
+                // it needs 2 rows (the last char wraps to next line)
+                wrapped_lines += (((line_width.saturating_sub(1)) / input_text_width) + 1) as u16;
             } else if !line.is_empty() {
                 wrapped_lines += 1;
             }
@@ -1207,19 +1209,23 @@ impl App {
                 let current_line_width = unicode_width::UnicodeWidthStr::width(current_line_content);
 
                 // Calculate wrapped lines and position
-                // Cursor at position N means: N characters have been typed
-                // If N <= available_width, cursor is on line 0, at position N
-                // If N > available_width, cursor wraps to subsequent lines
+                // When content exactly fills a line (current_line_width == available_width),
+                // the last character wraps to the next line
                 let wrapped_offset = if available_width > 0 && current_line_width >= available_width {
-                    // Use ceiling division to properly handle the wrap
-                    ((current_line_width + available_width) - 1) / available_width - 1
+                    // Same formula as height calculation
+                    (current_line_width.saturating_sub(1)) / available_width
                 } else {
                     0
                 };
 
                 // Column position within current wrapped line
+                // At boundary (width == available_width), wraps to next line, so col is 0
                 let col_in_line = if available_width > 0 {
-                    current_line_width % available_width
+                    if current_line_width > 0 && current_line_width % available_width == 0 {
+                        0 // At exact boundary, wraps to next line
+                    } else {
+                        current_line_width % available_width
+                    }
                 } else {
                     current_line_width
                 };
