@@ -2,9 +2,114 @@
 
 ## Current Status
 
-**Phase**: 容器隔离增强实施完成 ✅
-**Date**: 2026-02-17
-**Project Status**: CONTAINER ISOLATION ENHANCEMENT COMPLETED 🎉
+**Phase**: 多用户系统升级 (Phase 1-5) ✅
+**Date**: 2026-02-20
+**Project Status**: MULTI-USER SYSTEM CORE COMPLETED 🎉
+
+---
+
+## 2026-02-20 - 多用户系统升级完成
+
+### 本次完成的工作
+
+#### Phase 1: 基础用户系统 ✅
+
+| 功能 | 文件 |
+|------|------|
+| 用户注册/登录 | auth/password.py, auth/session.py |
+| Session 管理 (30天) | auth/session.py |
+| 登录锁定 (5次/15min) | auth/login_lock.py |
+| 邀请码管理 | auth/invite.py |
+| 认证异常 | auth/exceptions.py |
+| FastAPI 依赖 | auth/dependencies.py |
+
+**新增 API:**
+- POST /api/auth/register
+- POST /api/auth/login
+- POST /api/auth/logout
+- GET /api/auth/me
+- POST /api/auth/invite
+- GET /api/auth/invites
+
+#### Phase 2: RBAC 权限系统 ✅
+
+- 5种角色: owner, admin, user, viewer, guest
+- 15种权限: users.manage, groups.create, containers.create, tasks.*, config.*, audit.view
+- FastAPI 依赖: require_permission(), require_role()
+
+#### Phase 3: Per-User 隔离 ✅
+
+- 用户目录: data/users/{user_id}/
+- 子目录: groups/, sessions/, memory/, archives/, config.json
+- 容器挂载支持 user_id 参数
+
+#### Phase 4: 加密存储 ✅
+
+- AES-256-GCM (Fernet)
+- PBKDF2 密钥派生 (480000次)
+- 敏感配置加密: API keys, tokens, secrets
+
+#### Phase 5: 审计日志 ✅
+
+- 18种事件类型
+- API: GET /api/audit/events
+
+---
+
+## 数据库新增表
+
+- users
+- user_sessions
+- invite_codes
+- login_attempts
+- audit_logs
+- user_directories
+
+---
+
+## 依赖更新
+
+```toml
+# pyproject.toml 新增
+bcrypt>=4.2.0
+cryptography>=44.0.0
+itsdangerous>=2.2.0
+```
+
+---
+
+## 下一步
+
+### 优先级 1: Git 提交
+
+所有修改已准备就绪，可提交:
+
+```bash
+git add src/nanogridbot/auth/
+git add src/nanogridbot/rbac/
+git add src/nanogridbot/security/
+git add src/nanogridbot/database/users.py
+git add src/nanogridbot/web/app.py
+git add src/nanogridbot/types.py
+git commit -m "feat: add multi-user system (Phase 1-5)"
+```
+
+### 优先级 2: 单元测试
+
+新增测试文件:
+- tests/unit/test_auth/
+- tests/unit/test_rbac/
+- tests/unit/test_security/
+
+### 优先级 3: Phase 6-10 (可选)
+
+| Phase | 功能 |
+|-------|------|
+| 6 | 挂载安全增强（非主只读+符号链接检测） |
+| 7 | 记忆系统（CLAUDE.md+日期记忆+对话归档） |
+| 8 | 任务日志增强 |
+| 9 | Per-user IM 配置 |
+| 10 | HappyClaw React 19 前端整合 |
 
 ---
 

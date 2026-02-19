@@ -5,10 +5,37 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from nanogridbot.auth import (
+    InviteCodeManager,
+    LoginLockManager,
+    PasswordManager,
+    SessionManager,
+    get_current_user,
+    require_permission,
+    require_role,
+)
+from nanogridbot.auth.exceptions import (
+    AuthenticationError,
+    InvalidCredentialsError,
+    InviteCodeError,
+    LoginLockedError,
+    UserExistsError,
+)
+from nanogridbot.types import (
+    AuditEventType,
+    InviteCodeCreate,
+    Permission,
+    User,
+    UserCreate,
+    UserLogin,
+    UserResponse,
+    UserRole,
+)
 
 
 # ============================================================================
@@ -103,6 +130,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to initialize metrics database: {e}")
 
+    # Set up auth dependencies if database is available
+    if web_state.db:
+        from nanogridbot.auth.dependencies import set_database
+        from nanogridbot.auth.session import SessionManager
+
+        set_database(web_state.db)
+        session_mgr_instance = SessionManager(web_state.db)
+        set_session_manager(session_mgr_instance)
+        logger.info("Authentication system initialized")
+
     yield
     logger.info("NanoGridBot Web Dashboard shutting down...")
 
@@ -118,6 +155,8 @@ app = FastAPI(
         {"name": "messages", "description": "Chat message retrieval"},
         {"name": "health", "description": "Health checks and system metrics"},
         {"name": "metrics", "description": "Extended metrics and analytics"},
+        {"name": "auth", "description": "Authentication and user management"},
+        {"name": "audit", "description": "Audit log and security events"},
     ],
 )
 
@@ -700,3 +739,443 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket error: {e}")
     finally:
         await websocket.close()
+
+
+# ============================================================================
+# Authentication API
+# ============================================================================
+
+
+class AuthResponse(BaseModel):
+    """Response model for authentication."""
+
+    token: str
+    user: UserResponse
+
+
+class InviteCodeResponse(BaseModel):
+    """Response model for invite code."""
+
+    code: str
+    expires_at: str
+    max_uses: int
+
+
+def get_client_ip(request: Request) -> str | None:
+    """Get client IP from request.
+
+    Args:
+        request: FastAPI request.
+
+    Returns:
+        Client IP address.
+    """
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+@app.post(
+    "/api/auth/register",
+    response_model=AuthResponse,
+    tags=["auth"],
+    summary="Register new user",
+    description="Register a new user account with an invite code.",
+)
+async def register(user_data: UserCreate, request: Request):
+    """Register a new user."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    try:
+        # Validate invite code
+        invite_mgr = InviteCodeManager(db)
+        await invite_mgr.validate_code(user_data.invite_code)
+
+        # Check if username exists
+        user_repo = db.get_user_repository()
+        existing = await user_repo.get_user_by_username(user_data.username)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists",
+            )
+
+        # Check if email exists (if provided)
+        if user_data.email:
+            existing = await user_repo.get_user_by_email(user_data.email)
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already registered",
+                )
+
+        # Hash password and create user
+        password_mgr = PasswordManager()
+        hashed = password_mgr.hash_password(user_data.password)
+
+        user_id = await user_repo.create_user(
+            username=user_data.username,
+            email=user_data.email,
+            password_hash=hashed,
+        )
+
+        # Use invite code
+        await invite_mgr.use_code(user_data.invite_code, user_id)
+
+        # Create session
+        session_mgr = SessionManager(db)
+        token = await session_mgr.create_session(
+            user_id=user_id,
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+
+        # Get user for response
+        user = await user_repo.get_user_by_id(user_id)
+
+        # Log audit event
+        audit_repo = db.get_audit_repository()
+        await audit_repo.log_event(
+            event_type=AuditEventType.REGISTER,
+            user_id=user_id,
+            username=user_data.username,
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+
+        logger.info(f"User registered: {user_data.username}")
+
+        return AuthResponse(
+            token=token,
+            user=UserResponse(
+                id=user.id,
+                username=user.username,
+                email=user.email,
+                role=user.role,
+                is_active=user.is_active,
+                is_verified=user.is_verified,
+                created_at=user.created_at,
+                last_login=user.last_login,
+            ),
+        )
+
+    except InviteCodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/auth/login",
+    response_model=AuthResponse,
+    tags=["auth"],
+    summary="User login",
+    description="Authenticate user and create a session.",
+)
+async def login(credentials: UserLogin, request: Request):
+    """User login."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    ip_address = get_client_ip(request)
+
+    try:
+        # Check lockout
+        lock_mgr = LoginLockManager(db)
+        await lock_mgr.check_lockout(credentials.username)
+
+        # Get user
+        user_repo = db.get_user_repository()
+        user = await user_repo.get_user_by_username(credentials.username)
+
+        if not user:
+            # Record failed attempt
+            await lock_mgr.record_failed_attempt(credentials.username, ip_address)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password",
+            )
+
+        # Verify password
+        password_mgr = PasswordManager()
+        if not password_mgr.verify_password(credentials.password, user.password_hash):
+            # Record failed attempt
+            await lock_mgr.record_failed_attempt(credentials.username, ip_address)
+
+            # Log audit
+            audit_repo = db.get_audit_repository()
+            await audit_repo.log_event(
+                event_type=AuditEventType.LOGIN_FAILED,
+                user_id=user.id,
+                username=user.username,
+                ip_address=ip_address,
+                user_agent=request.headers.get("User-Agent"),
+                details={"reason": "invalid_password"},
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password",
+            )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is disabled",
+            )
+
+        # Record success and clear failed attempts
+        await lock_mgr.record_success(credentials.username, ip_address)
+
+        # Update last login
+        await user_repo.update_last_login(user.id)
+
+        # Create session
+        session_mgr = SessionManager(db)
+        token = await session_mgr.create_session(
+            user_id=user.id,
+            ip_address=ip_address,
+            user_agent=request.headers.get("User-Agent"),
+        )
+
+        # Log audit
+        audit_repo = db.get_audit_repository()
+        await audit_repo.log_event(
+            event_type=AuditEventType.LOGIN_SUCCESS,
+            user_id=user.id,
+            username=user.username,
+            ip_address=ip_address,
+            user_agent=request.headers.get("User-Agent"),
+        )
+
+        logger.info(f"User logged in: {user.username}")
+
+        return AuthResponse(
+            token=token,
+            user=UserResponse(
+                id=user.id,
+                username=user.username,
+                email=user.email,
+                role=user.role,
+                is_active=user.is_active,
+                is_verified=user.is_verified,
+                created_at=user.created_at,
+                last_login=user.last_login,
+            ),
+        )
+
+    except LoginLockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e),
+        )
+
+
+@app.post(
+    "/api/auth/logout",
+    tags=["auth"],
+    summary="User logout",
+    description="Logout and invalidate current session.",
+)
+async def logout(
+    request: Request,
+    authorization: str | None = Header(None),
+):
+    """User logout."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
+    token = authorization[7:]
+
+    # Get session to log audit
+    session_repo = db.get_session_repository()
+    session = await session_repo.get_session_by_token(token)
+
+    if session:
+        # Log audit
+        audit_repo = db.get_audit_repository()
+        await audit_repo.log_event(
+            event_type=AuditEventType.LOGOUT,
+            user_id=session.user_id,
+            ip_address=get_client_ip(request),
+            user_agent=request.headers.get("User-Agent"),
+        )
+
+        # Delete session
+        await session_mgr.delete_session(token)
+
+    return {"message": "Logged out successfully"}
+
+
+@app.get(
+    "/api/auth/me",
+    response_model=UserResponse,
+    tags=["auth"],
+    summary="Get current user",
+    description="Get information about the currently authenticated user.",
+)
+async def get_me(user: User = Depends(get_current_user)):
+    """Get current user."""
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        is_active=user.is_active,
+        is_verified=user.is_verified,
+        created_at=user.created_at,
+        last_login=user.last_login,
+    )
+
+
+@app.post(
+    "/api/auth/invite",
+    response_model=InviteCodeResponse,
+    tags=["auth"],
+    summary="Create invite code",
+    description="Create a new invite code (requires admin role).",
+)
+async def create_invite(
+    invite_data: InviteCodeCreate,
+    request: Request,
+    user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Create invite code."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    invite_mgr = InviteCodeManager(db)
+    code_data = await invite_mgr.create_code(
+        created_by=user.id,
+        expires_in_days=invite_data.expires_in_days,
+        max_uses=invite_data.max_uses,
+    )
+
+    return InviteCodeResponse(
+        code=code_data["code"],
+        expires_at=code_data["expires_at"],
+        max_uses=code_data["max_uses"],
+    )
+
+
+@app.get(
+    "/api/auth/invites",
+    tags=["auth"],
+    summary="List invite codes",
+    description="List all invite codes (requires admin role).",
+)
+async def list_invites(
+    user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """List invite codes."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    invite_mgr = InviteCodeManager(db)
+    return await invite_mgr.list_codes(created_by=user.id)
+
+
+# Initialize session_mgr at module level for logout
+session_mgr: SessionManager | None = None
+
+
+def set_session_manager(mgr: SessionManager) -> None:
+    """Set the session manager for the web app."""
+    global session_mgr
+    session_mgr = mgr
+
+
+# ============================================================================
+# Audit Log API
+# ============================================================================
+
+
+class AuditEventResponse(BaseModel):
+    """Response model for audit event."""
+
+    id: int
+    event_type: str
+    user_id: int | None
+    username: str | None
+    ip_address: str | None
+    user_agent: str | None
+    resource_type: str | None
+    resource_id: str | None
+    details: str | None
+    timestamp: str
+
+
+@app.get(
+    "/api/audit/events",
+    response_model=list[AuditEventResponse],
+    tags=["auth"],
+    summary="Get audit events",
+    description="Get audit events (requires admin role).",
+)
+async def get_audit_events(
+    event_type: AuditEventType | None = Query(None, description="Filter by event type"),
+    user_id: int | None = Query(None, description="Filter by user ID"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum events to return"),
+    offset: int = Query(0, ge=0, description="Number of events to skip"),
+    user: User = Depends(require_permission(Permission.AUDIT_VIEW)),
+):
+    """Get audit events."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    audit_repo = db.get_audit_repository()
+    events = await audit_repo.get_events(
+        user_id=user_id,
+        event_type=event_type,
+        limit=limit,
+        offset=offset,
+    )
+
+    return [
+        AuditEventResponse(
+            id=e.id,
+            event_type=e.event_type.value,
+            user_id=e.user_id,
+            username=e.username,
+            ip_address=e.ip_address,
+            user_agent=e.user_agent,
+            resource_type=e.resource_type,
+            resource_id=e.resource_id,
+            details=e.details,
+            timestamp=e.timestamp.isoformat() if e.timestamp else "",
+        )
+        for e in events
+    ]

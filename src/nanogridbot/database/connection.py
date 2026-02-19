@@ -10,6 +10,13 @@ from loguru import logger
 from nanogridbot.database.groups import GroupRepository
 from nanogridbot.database.messages import MessageRepository
 from nanogridbot.database.tasks import TaskRepository
+from nanogridbot.database.users import (
+    AuditRepository,
+    InviteCodeRepository,
+    LoginAttemptRepository,
+    SessionRepository,
+    UserRepository,
+)
 from nanogridbot.utils.error_handling import with_retry
 
 
@@ -104,6 +111,105 @@ class Database:
             )
         """)
 
+        # Users table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                is_active INTEGER DEFAULT 1,
+                is_verified INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                last_login TEXT
+            )
+        """)
+
+        # User sessions table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                session_token TEXT UNIQUE NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_activity TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+
+        # Invite codes table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS invite_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                created_by INTEGER NOT NULL,
+                used_by INTEGER,
+                used_at TEXT,
+                expires_at TEXT NOT NULL,
+                max_uses INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (used_by) REFERENCES users(id) ON DELETE SET NULL
+            )
+        """)
+
+        # Login attempts table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                ip_address TEXT,
+                attempt_time TEXT NOT NULL,
+                success INTEGER DEFAULT 0
+            )
+        """)
+
+        # Audit logs table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                user_id INTEGER,
+                username TEXT,
+                ip_address TEXT,
+                user_agent TEXT,
+                resource_type TEXT,
+                resource_id TEXT,
+                details TEXT,
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+        """)
+
+        # Audit logs indexes
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_logs(event_type)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp)
+        """)
+
+        # User directories table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_directories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                directory_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+
         await db.commit()
 
     async def execute(
@@ -189,3 +295,43 @@ class Database:
             TaskRepository instance.
         """
         return TaskRepository(self)
+
+    def get_user_repository(self) -> UserRepository:
+        """Get user repository instance.
+
+        Returns:
+            UserRepository instance.
+        """
+        return UserRepository(self)
+
+    def get_session_repository(self) -> SessionRepository:
+        """Get session repository instance.
+
+        Returns:
+            SessionRepository instance.
+        """
+        return SessionRepository(self)
+
+    def get_invite_code_repository(self) -> InviteCodeRepository:
+        """Get invite code repository instance.
+
+        Returns:
+            InviteCodeRepository instance.
+        """
+        return InviteCodeRepository(self)
+
+    def get_login_attempt_repository(self) -> LoginAttemptRepository:
+        """Get login attempt repository instance.
+
+        Returns:
+            LoginAttemptRepository instance.
+        """
+        return LoginAttemptRepository(self)
+
+    def get_audit_repository(self) -> AuditRepository:
+        """Get audit repository instance.
+
+        Returns:
+            AuditRepository instance.
+        """
+        return AuditRepository(self)

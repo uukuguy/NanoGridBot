@@ -72,6 +72,13 @@ dependencies = [
 
     # Plugin System
     "watchdog>=5.0.0",
+
+    # Authentication
+    "bcrypt>=4.2.0",
+    "cryptography>=44.0.0",
+
+    # Session Management
+    "itsdangerous>=2.2.0",
 ]
 
 [project.optional-dependencies]
