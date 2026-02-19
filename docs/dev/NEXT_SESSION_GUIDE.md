@@ -225,12 +225,35 @@ make install
 - 与容器启动流程集成（真正的 agent 响应）
 - 错误处理增强
 - 状态栏完善
-- 历史搜索 UI（Ctrl+R 触发搜索）
 
-**修改文件**:
-- `Cargo.lock`
-- `crates/ngb-tui/Cargo.toml` (添加 uuid 依赖)
-- `crates/ngb-tui/src/app.rs` (集成 keymap/tree/engine)
+---
+
+## Phase 18: Ctrl+R 历史搜索 UI (本会话新增)
+
+**状态**: ✅ 完成
+
+### 已完成
+
+- **AppMode 枚举**: 添加 Normal/Search 模式切换
+- **键绑定**: Ctrl+R 激活搜索，Esc 退出，Enter 选中，↑↓ 导航
+- **搜索 UI**: 覆盖式搜索面板，实时过滤结果
+- **历史引擎集成**: 使用 engine.rs 的 search_history 方法
+
+### 修改文件
+
+- `crates/ngb-tui/src/app.rs`: 添加搜索模式状态和 UI 渲染
+- `crates/ngb-tui/src/keymap.rs`: 添加搜索相关 Action 和 Condition
+- `crates/ngb-tui/src/lib.rs`: 导出 AppMode
+
+### 使用方法
+
+1. 按 **Ctrl+R** 打开历史搜索面板
+2. 输入搜索词实时过滤历史记录
+3. 使用 **↑↓** 选择结果
+4. 按 **Enter** 填充到输入框
+5. 按 **Esc** 退出搜索
+
+**测试**: 10 passing, zero clippy warnings
 
 **参考**:
 - 设计文档: `docs/plans/2026-02-18-ngb-shell-tui.md`

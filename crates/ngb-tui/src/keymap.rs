@@ -40,6 +40,16 @@ pub enum Action {
     Quit,
     Interrupt,
     ClearScreen,
+
+    // Search
+    OpenSearch,
+    ExitSearch,
+    SearchSelect,
+    SearchUp,
+    SearchDown,
+
+    // No operation (fallback for unhandled keys)
+    NoOp,
 }
 
 /// Conditional atom - for conditional keybindings
@@ -53,6 +63,8 @@ pub enum ConditionAtom {
     ListAtStart,
     HasResults,
     NoResults,
+    InSearchMode,
+    NotInSearchMode,
 }
 
 /// Evaluation context for condition evaluation
@@ -64,6 +76,7 @@ pub struct EvalContext {
     pub selected_index: usize,
     pub results_len: usize,
     pub original_input_empty: bool,
+    pub in_search_mode: bool,
 }
 
 impl EvalContext {
@@ -80,6 +93,8 @@ impl EvalContext {
             ConditionAtom::ListAtStart => self.selected_index == 0,
             ConditionAtom::HasResults => self.results_len > 0,
             ConditionAtom::NoResults => self.results_len == 0,
+            ConditionAtom::InSearchMode => self.in_search_mode,
+            ConditionAtom::NotInSearchMode => !self.in_search_mode,
         }
     }
 }
@@ -110,16 +125,12 @@ impl KeyBinding {
 /// Default keybindings for NanoGridBot TUI
 pub fn default_keybindings() -> Vec<KeyBinding> {
     vec![
-        // Ctrl+C: Clear when input is empty, interrupt when has content
+        // Ctrl+C: Always triggers Interrupt action
+        // Logic handles: clear input → interrupt → double-press quit
         KeyBinding {
             key: (KeyCode::Char('c'), KeyModifiers::CONTROL),
             action: Action::Interrupt,
-            condition: Some(ConditionAtom::InputNotEmpty),
-        },
-        KeyBinding {
-            key: (KeyCode::Char('c'), KeyModifiers::CONTROL),
-            action: Action::Clear,
-            condition: Some(ConditionAtom::InputEmpty),
+            condition: None,
         },
         // Enter: Submit when input is not empty
         KeyBinding {
@@ -160,11 +171,11 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
             action: Action::CursorRight,
             condition: None,
         },
-        // Backspace and Delete
+        // Backspace: delete previous char (unconditional, handle in action)
         KeyBinding {
             key: (KeyCode::Backspace, KeyModifiers::NONE),
             action: Action::Backspace,
-            condition: Some(ConditionAtom::CursorAtStart),
+            condition: None,
         },
         KeyBinding {
             key: (KeyCode::Delete, KeyModifiers::NONE),
@@ -194,6 +205,68 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
             action: Action::DeleteWord,
             condition: Some(ConditionAtom::InputNotEmpty),
         },
+        // Emacs-style editing: Ctrl+A (home), Ctrl+E (end), Ctrl+B (back), Ctrl+F (forward)
+        KeyBinding {
+            key: (KeyCode::Char('a'), KeyModifiers::CONTROL),
+            action: Action::CursorHome,
+            condition: None,
+        },
+        KeyBinding {
+            key: (KeyCode::Char('e'), KeyModifiers::CONTROL),
+            action: Action::CursorEnd,
+            condition: None,
+        },
+        KeyBinding {
+            key: (KeyCode::Char('b'), KeyModifiers::CONTROL),
+            action: Action::CursorLeft,
+            condition: None,
+        },
+        KeyBinding {
+            key: (KeyCode::Char('f'), KeyModifiers::CONTROL),
+            action: Action::CursorRight,
+            condition: None,
+        },
+        // Ctrl+D: Delete character at cursor
+        KeyBinding {
+            key: (KeyCode::Char('d'), KeyModifiers::CONTROL),
+            action: Action::Delete,
+            condition: Some(ConditionAtom::InputNotEmpty),
+        },
+        // Ctrl+W: Delete previous word
+        KeyBinding {
+            key: (KeyCode::Char('w'), KeyModifiers::CONTROL),
+            action: Action::DeleteWord,
+            condition: Some(ConditionAtom::InputNotEmpty),
+        },
+        // Ctrl+R: Open history search (in normal mode)
+        KeyBinding {
+            key: (KeyCode::Char('r'), KeyModifiers::CONTROL),
+            action: Action::OpenSearch,
+            condition: Some(ConditionAtom::NotInSearchMode),
+        },
+        // Escape: Exit search mode
+        KeyBinding {
+            key: (KeyCode::Esc, KeyModifiers::NONE),
+            action: Action::ExitSearch,
+            condition: Some(ConditionAtom::InSearchMode),
+        },
+        // Enter in search mode: Select result
+        KeyBinding {
+            key: (KeyCode::Enter, KeyModifiers::NONE),
+            action: Action::SearchSelect,
+            condition: Some(ConditionAtom::InSearchMode),
+        },
+        // Up/Down in search mode: Navigate results
+        KeyBinding {
+            key: (KeyCode::Up, KeyModifiers::NONE),
+            action: Action::SearchUp,
+            condition: Some(ConditionAtom::InSearchMode),
+        },
+        KeyBinding {
+            key: (KeyCode::Down, KeyModifiers::NONE),
+            action: Action::SearchDown,
+            condition: Some(ConditionAtom::InSearchMode),
+        },
     ]
 }
 
@@ -210,6 +283,7 @@ mod tests {
             selected_index: 0,
             results_len: 10,
             original_input_empty: false,
+            in_search_mode: false,
         };
 
         assert!(ctx.evaluate(&ConditionAtom::CursorAtStart));
@@ -230,6 +304,7 @@ mod tests {
             selected_index: 0,
             results_len: 10,
             original_input_empty: false,
+            in_search_mode: false,
         };
 
         assert!(!ctx.evaluate(&ConditionAtom::CursorAtStart));

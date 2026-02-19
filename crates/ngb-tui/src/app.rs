@@ -8,6 +8,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     prelude::Stylize,
+    style::{Color, Modifier},
     text::{Line, Span},
     widgets::{List, ListItem, ListState},
     Frame,
@@ -23,7 +24,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::engine::{create_history_engine, HistoryEngine, SearchResult, SearchEngine};
+use crate::engine::{create_history_engine, HistoryEngine, SearchResult};
 use crate::keymap::{self, Action, EvalContext, KeyBinding};
 use crate::tree::{Tree, TreeNode};
 use crate::theme::{Theme, ThemeName};
@@ -109,6 +110,14 @@ pub enum KeyMode {
     Vim,
 }
 
+/// Application mode (normal or search)
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum AppMode {
+    #[default]
+    Normal,
+    Search,
+}
+
 pub struct App {
     /// Whether to quit the application
     #[allow(dead_code)]
@@ -154,6 +163,12 @@ pub struct App {
     search_results: Vec<String>,
     /// Current search query
     search_query: String,
+    /// Application mode (normal or search)
+    app_mode: AppMode,
+    /// Search selection state
+    search_selected: usize,
+    /// Current input history index (for up/down navigation)
+    history_index: Option<usize>,
     /// Tree structure for message threads
     message_tree: Tree,
     /// History engine for search
@@ -254,6 +269,9 @@ impl App {
             keybindings: keymap::default_keybindings(),
             search_results: Vec::new(),
             search_query: String::new(),
+            app_mode: AppMode::default(),
+            search_selected: 0,
+            history_index: None,
             message_tree: Tree::new(),
             history_engine: create_history_engine(),
         })
@@ -513,6 +531,7 @@ impl App {
             selected_index: self.chat_state.selected().unwrap_or(0),
             results_len: self.search_results.len(),
             original_input_empty: self.input.is_empty(),
+            in_search_mode: self.app_mode == AppMode::Search,
         }
     }
 
@@ -553,12 +572,21 @@ impl App {
         self.history_engine.add_result(result);
     }
 
-    /// Search history
-    fn search_history(&mut self, query: &str) -> Vec<String> {
-        // Use blocking search since we're in sync context
-        let results = tokio::runtime::Handle::current()
-            .block_on(self.history_engine.search(query));
-        results.into_iter().map(|r| r.content).collect()
+    /// Search history (synchronous, without tokio runtime)
+    fn search_history(&self, query: &str) -> Vec<String> {
+        // Synchronous search without tokio runtime
+        // This is a simple contains match implemented directly
+        if query.is_empty() {
+            return self.history_engine.results().iter().map(|r| r.content.clone()).collect();
+        }
+
+        let query_lower = query.to_lowercase();
+        self.history_engine
+            .results()
+            .iter()
+            .filter(|r| r.content.to_lowercase().contains(&query_lower))
+            .map(|r| r.content.clone())
+            .collect()
     }
 
     /// Handle action from keymap
@@ -691,6 +719,42 @@ impl App {
             Action::ClearScreen => {
                 self.chat_state.select(Some(self.messages.len().saturating_sub(1)));
             }
+            // Search actions
+            Action::OpenSearch => {
+                self.app_mode = AppMode::Search;
+                self.search_query.clear();
+                self.search_selected = 0;
+                // Load all history as initial results
+                self.search_results = self.search_history("");
+            }
+            Action::ExitSearch => {
+                self.app_mode = AppMode::Normal;
+                self.search_query.clear();
+                self.search_results.clear();
+            }
+            Action::SearchSelect => {
+                if !self.search_results.is_empty() {
+                    let selected = self.search_results[self.search_selected].clone();
+                    self.input = selected;
+                    self.cursor_position = self.input.len();
+                }
+                self.app_mode = AppMode::Normal;
+                self.search_query.clear();
+                self.search_results.clear();
+            }
+            Action::SearchUp => {
+                if !self.search_results.is_empty() {
+                    self.search_selected = self.search_selected.saturating_sub(1);
+                }
+            }
+            Action::SearchDown => {
+                if !self.search_results.is_empty() {
+                    self.search_selected = (self.search_selected + 1).min(self.search_results.len() - 1);
+                }
+            }
+            Action::NoOp => {
+                // No operation - do nothing
+            }
         }
     }
 
@@ -783,13 +847,39 @@ impl App {
     fn draw(&mut self, f: &mut Frame) {
         let area = f.area();
 
-        // Define layout: Header(3) + Chat(*) + Input(3) + Status(2)
+        // Calculate dynamic input height based on content
+        // Input area: min 1 row, max 10 rows for content
+        let input_text_width = area.width.saturating_sub(4) as usize; // subtract borders and prefix
+        let input_text = &self.input;
+
+        // Count lines: explicit newlines + wrap-based lines
+        let explicit_newlines = input_text.chars().filter(|&c| c == '\n').count() as u16;
+
+        // Calculate wrapped lines for each segment between newlines
+        let mut wrapped_lines = 0u16;
+        for line in input_text.split('\n') {
+            let line_chars = line.chars().count();
+            if input_text_width > 0 && line_chars > 0 {
+                wrapped_lines += ((line_chars as f32 / input_text_width as f32).ceil() as u16).max(1);
+            } else if !line.is_empty() {
+                wrapped_lines += 1;
+            }
+        }
+
+        // Total lines = explicit newlines + wrapped content
+        let total_lines = (explicit_newlines + 1).max(wrapped_lines);
+        let min_input_lines = 1;
+        let max_input_lines = 10;
+        let input_lines = total_lines.clamp(min_input_lines, max_input_lines);
+        let input_height = input_lines + 2; // +2 for top and bottom borders
+
+        // Define layout with dynamic input height
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Header
                 Constraint::Min(0),    // Chat
-                Constraint::Length(3), // Input (3: top border + content + bottom border)
+                Constraint::Length(input_height), // Input (dynamic)
                 Constraint::Length(2), // Status (2 rows)
             ])
             .split(area);
@@ -798,6 +888,11 @@ impl App {
         self.draw_chat(f, chunks[1]);
         self.draw_input(f, chunks[2]);
         self.draw_status(f, chunks[3]);
+
+        // Draw search overlay if in search mode
+        if self.app_mode == AppMode::Search {
+            self.draw_search_overlay(f, area);
+        }
     }
 
     fn draw_header(&self, f: &mut Frame, area: Rect) {
@@ -880,38 +975,124 @@ impl App {
         f.render_stateful_widget(list, area, &mut self.chat_state);
     }
 
+    /// Wrap long text to fit within specified width (for chat display)
+    /// Returns lines with prefix prepended: first line has full_prefix, continuation has continuation_prefix
+    fn wrap_message_text(text: &str, full_prefix: &str, continuation_prefix: &str, timestamp: &str) -> Vec<String> {
+        const DEFAULT_WIDTH: usize = 80;
+        let mut result = Vec::new();
+
+        // First, split by explicit newlines
+        let explicit_lines: Vec<&str> = text.lines().collect();
+        let is_single_line = explicit_lines.len() == 1;
+
+        for (line_idx, line) in explicit_lines.iter().enumerate() {
+            let line_width = line.len();
+
+            // Determine available width for this line (use char count as approximation)
+            let available_width = if line_idx == 0 && is_single_line {
+                DEFAULT_WIDTH.saturating_sub(full_prefix.len() + timestamp.len())
+            } else {
+                DEFAULT_WIDTH.saturating_sub(continuation_prefix.len())
+            };
+
+            if line_width == 0 {
+                result.push(String::new());
+            } else if line_width <= available_width {
+                // Line fits, just add prefix
+                if line_idx == 0 && is_single_line {
+                    result.push(format!("{}{} {}", full_prefix, line, timestamp));
+                } else if line_idx == 0 {
+                    result.push(format!("{}{}", full_prefix, line));
+                } else {
+                    result.push(format!("{}{}", continuation_prefix, line));
+                }
+            } else {
+                // Wrap long line word by word
+                let mut current_line = String::new();
+                let mut current_width = 0;
+                for word in line.split_whitespace() {
+                    let word_width = word.len();
+                    if current_width + word_width + 1 > available_width {
+                        if !current_line.is_empty() {
+                            result.push(format!("{}{}", continuation_prefix, current_line.trim()));
+                        }
+                        current_line = word.to_string();
+                        current_width = word_width;
+                    } else {
+                        if current_width > 0 {
+                            current_line.push(' ');
+                            current_width += 1;
+                        }
+                        current_line.push_str(word);
+                        current_width += word_width;
+                    }
+                }
+                if !current_line.is_empty() {
+                    result.push(format!("{}{}", continuation_prefix, current_line.trim()));
+                }
+            }
+        }
+
+        result
+    }
+
     fn render_message_item<'a>(msg: &'a Message, collapsed: bool, theme: &'a Theme, tree_prefix: &str) -> ListItem<'a> {
         use ratatui::style::Style;
+        use ratatui::text::Line;
 
         let icons = &theme.icons;
-        let spacer = "\n";
 
         // Build prefix with tree structure
-        let base_prefix = |icons: &crate::theme::IconSet, timestamp: &str| -> String {
-            format!("{} {}  {}{}", icons.agent, icons.agent, timestamp, spacer)
-        };
+        let user_prefix = format!("{} {} ", tree_prefix, icons.user);
+        let agent_prefix = format!("{} {} ", tree_prefix, icons.agent);
 
         match msg.role {
             MessageRole::User => {
-                let content = match &msg.content {
-                    MessageContent::Text(text) => format!("{}{} {}  {}{}{}", tree_prefix, icons.user, text, msg.timestamp, spacer, spacer),
-                    _ => format!("{}{}{}", tree_prefix, msg.timestamp, spacer),
-                };
-                ListItem::new(content)
-                    .style(Style::default().fg(theme.user_message).italic())
+                match &msg.content {
+                    MessageContent::Text(text) => {
+                        // Wrap long text: prefix for first line is user_prefix + timestamp, continuation uses user_prefix
+                        let wrapped_lines = Self::wrap_message_text(text, &user_prefix, &user_prefix, &msg.timestamp);
+                        let lines: Vec<Line> = wrapped_lines
+                            .into_iter()
+                            .map(Line::from)
+                            .collect();
+                        ListItem::new(lines)
+                            .style(Style::default().fg(theme.user_message).italic())
+                    }
+                    _ => ListItem::new(user_prefix.clone()),
+                }
             }
             MessageRole::Agent => {
-                let prefix = format!("{}{}", tree_prefix, base_prefix(icons, &msg.timestamp));
                 match &msg.content {
-                    MessageContent::Text(text) => ListItem::new(format!("{}{}{}", prefix, text, spacer))
-                        .style(Style::default().fg(theme.agent_message)),
+                    MessageContent::Text(text) => {
+                        // Wrap long text: first line gets agent_prefix + timestamp, continuation gets agent_prefix
+                        let wrapped_lines = Self::wrap_message_text(text, &agent_prefix, &agent_prefix, &msg.timestamp);
+                        let lines: Vec<Line> = wrapped_lines
+                            .into_iter()
+                            .map(Line::from)
+                            .collect();
+                        ListItem::new(lines)
+                            .style(Style::default().fg(theme.agent_message))
+                    }
                     MessageContent::Thinking(text) => {
                         let preview = if collapsed {
                             format!("[{} collapsed, press Tab to expand]", text.lines().count())
                         } else {
                             text.clone()
                         };
-                        ListItem::new(format!("{}{} {}{}{}", prefix, icons.agent, icons.agent, preview, spacer))
+                        let thinking_prefix = format!("{}{} ", tree_prefix, icons.spinner[0]);
+                        let lines: Vec<Line> = preview
+                            .lines()
+                            .enumerate()
+                            .map(|(i, line)| {
+                                if i == 0 {
+                                    Line::from(format!("{}{}", thinking_prefix, line))
+                                } else {
+                                    Line::from(format!("{}{}", tree_prefix, line))
+                                }
+                            })
+                            .collect();
+                        ListItem::new(lines)
                             .style(Style::default().fg(theme.thinking))
                     }
                     MessageContent::ToolCall { name, status } => {
@@ -925,19 +1106,25 @@ impl App {
                             ToolStatus::Success => theme.tool_success,
                             ToolStatus::Error => theme.tool_error,
                         };
-                        ListItem::new(format!("{}{} {}{}{}", prefix, icons.arrow, name, status_icon, spacer))
+                        let tool_line = format!("{}{} {}{}", tree_prefix, icons.arrow, name, status_icon);
+                        ListItem::new(tool_line)
                             .style(Style::default().fg(color))
                     }
                     MessageContent::CodeBlock { language, code } => {
                         // Use syntax highlighting
                         let highlighted = crate::syntax::highlight_code(code, language);
                         let cb = icons.code_block;
-                        let block = format!("{} {} {}\n{}\n", cb, language, cb, highlighted);
-                        ListItem::new(format!("{}{}{}", prefix, block, spacer))
+                        let block_header = format!("{} {} {}", cb, language, cb);
+                        let lines: Vec<Line> = vec![
+                            Line::from(format!("{}{}", tree_prefix, block_header)),
+                            Line::from(highlighted),
+                        ];
+                        ListItem::new(lines)
                             .style(Style::default().fg(theme.warning))
                     }
                     MessageContent::Error(err) => {
-                        ListItem::new(format!("{}{} Error: {}{}", prefix, icons.cross, err, spacer))
+                        let error_line = format!("{}{} Error: {}", tree_prefix, icons.cross, err);
+                        ListItem::new(error_line)
                             .style(Style::default().fg(theme.error))
                     }
                 }
@@ -947,47 +1134,99 @@ impl App {
 
     fn draw_input(&self, f: &mut Frame, area: Rect) {
         use ratatui::style::Style;
-        use ratatui::widgets::{Block, Borders};
+        use ratatui::widgets::{Block, Borders, Paragraph};
 
-        // 上下细线
+        // Threshold for long input warning
+        const LONG_INPUT_THRESHOLD: usize = 500;
+        const MAX_DISPLAY_CHARS: usize = 300;
+
+        //上下细线
         let block = Block::new()
             .borders(Borders::TOP | Borders::BOTTOM)
             .border_style(Style::default().fg(self.theme.border));
 
-        // 添加 ❯ 前缀
+        //添加 ❯ 前缀
         let prefix = "❯ ";
-        let text = if self.input.is_empty() {
-            prefix.to_string()
+
+        // Handle long input: show warning for very long content
+        let (text, _show_warning) = if self.input.len() > LONG_INPUT_THRESHOLD {
+            // Show truncated content + warning
+            let display_content: String = self.input.chars().take(MAX_DISPLAY_CHARS).collect();
+            let warning = format!("\n[... {} characters, showing last {} ...]", self.input.len(), MAX_DISPLAY_CHARS);
+            (format!("{}{}{}", prefix, display_content, warning), true)
         } else {
-            format!("{}{}", prefix, self.input.as_str())
+            let content = if self.input.is_empty() {
+                String::new()
+            } else {
+                self.input.clone()
+            };
+            (format!("{}{}", prefix, content), false)
         };
 
-        let paragraph = ratatui::widgets::Paragraph::new(text)
+        let paragraph = Paragraph::new(text)
             .block(block)
             .style(Style::default().fg(self.theme.input))
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         f.render_widget(paragraph, area);
 
-        // Render cursor at position (always show, even when empty)
+        // Render cursor at position
         #[allow(deprecated)]
         if area.width > 2 {
-            let prefix = "❯ ";
             let prefix_width = unicode_width::UnicodeWidthStr::width(prefix) as u16;
+            let available_width = (area.width as usize).saturating_sub(prefix_width as usize);
 
             if self.input.is_empty() {
                 // Empty input: show cursor at prefix end
                 let x = area.x + prefix_width;
-                let y = area.y + 1; // 第二行（内容行）
+                let y = area.y + 1;
                 f.set_cursor(x, y);
             } else {
-                // Has input: cursor at end of text
-                let input_before_cursor: String = self.input.chars().take(self.cursor_position).collect();
-                let cursor_x = unicode_width::UnicodeWidthStr::width(input_before_cursor.as_str()) as u16;
-                let cursor_x = (prefix_width + cursor_x).min(area.width - 1);
-                let x = area.x + cursor_x;
-                let y = area.y + 1; // 第二行（内容行）
-                f.set_cursor(x, y);
+                // Calculate cursor row and column based on content
+                // Get characters before cursor position
+                let chars_before_cursor: String = self.input.chars().take(self.cursor_position).collect();
+
+                // Find the content on the current line (after last explicit newline)
+                let last_newline_idx = chars_before_cursor.rfind('\n');
+                let current_line_content = if let Some(idx) = last_newline_idx {
+                    &chars_before_cursor[idx + 1..]
+                } else {
+                    chars_before_cursor.as_str()
+                };
+
+                // Calculate visual position on current line
+                let current_line_width = unicode_width::UnicodeWidthStr::width(current_line_content);
+
+                // Calculate wrapped lines for the current line content
+                // Each wrap adds a new line when content exceeds available width
+                let wrapped_offset = if available_width > 0 && current_line_width > available_width {
+                    // How many times we've wrapped (integer division)
+                    (current_line_width - 1) / available_width
+                } else {
+                    0
+                };
+
+                // Column position on current line (within current wrap segment)
+                // Fix: at exact boundary (modulo = 0), cursor should be at last position, not 0
+                let col_in_line = if available_width > 0 {
+                    let mod_result = current_line_width % available_width;
+                    if mod_result == 0 && current_line_width > 0 {
+                        available_width - 1
+                    } else {
+                        mod_result
+                    }
+                } else {
+                    current_line_width
+                };
+
+                // Count explicit newlines
+                let explicit_newlines = chars_before_cursor.chars().filter(|&c| c == '\n').count() as u16;
+
+                // Final cursor position
+                let cursor_x = (prefix_width as usize + col_in_line).min(area.width as usize - 1) as u16;
+                let cursor_y = (area.y + 1 + explicit_newlines + wrapped_offset as u16).min(area.bottom().saturating_sub(1));
+
+                f.set_cursor(area.x + cursor_x, cursor_y);
             }
         }
     }
@@ -1014,7 +1253,7 @@ impl App {
 
         // 第二行: 操作提示
         let line2 = format!(
-            " {} scroll | Tab expand/collapse | Ctrl+C clear/interrupt | 2x Ctrl+C quit ",
+            " {} scroll | Tab expand/collapse | Ctrl+R history | Ctrl+C clear/interrupt | 2x Ctrl+C quit ",
             icons.arrow,
         );
 
@@ -1025,13 +1264,132 @@ impl App {
         f.render_widget(paragraph, area);
     }
 
+    /// Draw search overlay (Ctrl+R history search)
+    fn draw_search_overlay(&self, f: &mut Frame, area: Rect) {
+        use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+        use ratatui::style::Style;
+
+        // Create a centered overlay box
+        let overlay_width = 60.min(area.width.saturating_sub(4));
+        let overlay_height = 15.min(area.height.saturating_sub(4));
+
+        let overlay_x = (area.width - overlay_width) / 2;
+        let overlay_y = (area.height - overlay_height) / 2;
+
+        let overlay_area = Rect::new(
+            overlay_x,
+            overlay_y,
+            overlay_x + overlay_width,
+            overlay_y + overlay_height,
+        );
+
+        // Draw semi-transparent background
+        let bg_block = Block::default()
+            .style(Style::default().bg(Color::DarkGray))
+            .borders(Borders::NONE);
+        f.render_widget(bg_block, overlay_area);
+
+        // Draw border box
+        let box_area = Rect::new(
+            overlay_area.x + 1,
+            overlay_area.y + 1,
+            overlay_area.x + overlay_width - 1,
+            overlay_area.y + overlay_height - 1,
+        );
+
+        let search_block = Block::default()
+            .title(" Search History (Ctrl+R) ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.accent));
+        f.render_widget(search_block, box_area);
+
+        // Draw search input
+        let input_area = Rect::new(
+            box_area.x + 1,
+            box_area.y + 1,
+            box_area.right().saturating_sub(1),
+            box_area.y + 3,
+        );
+
+        let input_text = format!("> {}", self.search_query);
+        let input_para = Paragraph::new(input_text)
+            .style(Style::default().fg(self.theme.input));
+        f.render_widget(input_para, input_area);
+
+        // Draw results list
+        let results_area = Rect::new(
+            box_area.x + 1,
+            box_area.y + 3,
+            box_area.right().saturating_sub(1),
+            box_area.bottom().saturating_sub(1),
+        );
+
+        if self.search_results.is_empty() {
+            let empty_text = Paragraph::new("No history found")
+                .style(Style::default().fg(self.theme.status).dim());
+            f.render_widget(empty_text, results_area);
+        } else {
+            let items: Vec<ListItem> = self.search_results
+                .iter()
+                .enumerate()
+                .map(|(idx, result)| {
+                    let prefix = if idx == self.search_selected { "▶" } else { " " };
+                    let style = if idx == self.search_selected {
+                        Style::default().fg(self.theme.accent).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(self.theme.input)
+                    };
+                    ListItem::new(format!("{} {}", prefix, result)).style(style)
+                })
+                .collect();
+
+            let results_list = List::new(items)
+                .block(Block::default().borders(Borders::NONE));
+            f.render_widget(results_list, results_area);
+        }
+
+        // Draw hint at bottom
+        let hint_area = Rect::new(
+            box_area.x + 1,
+            box_area.bottom().saturating_sub(1),
+            box_area.right().saturating_sub(1),
+            box_area.bottom(),
+        );
+        let hint = Paragraph::new("↑↓ select | Enter use | Esc cancel")
+            .style(Style::default().fg(self.theme.status).dim());
+        f.render_widget(hint, hint_area);
+    }
+
     fn handle_key(&mut self, key: event::KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
         }
 
-        // Vim mode specific handling (not handled by keymap)
-        if self.key_mode == KeyMode::Vim {
+        // Search mode: handle character input and special keys
+        if self.app_mode == AppMode::Search {
+            match key.code {
+                KeyCode::Char(c) => {
+                    self.search_query.push(c);
+                    // Real-time search
+                    let query = self.search_query.clone();
+                    self.search_results = self.search_history(&query);
+                    self.search_selected = 0;
+                    return;
+                }
+                KeyCode::Backspace => {
+                    self.search_query.pop();
+                    // Real-time search
+                    let query = self.search_query.clone();
+                    self.search_results = self.search_history(&query);
+                    self.search_selected = 0;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        // Vim mode specific handling (only when NOT in search mode)
+        if self.key_mode == KeyMode::Vim && self.app_mode != AppMode::Search {
             match key.code {
                 KeyCode::Char('k') => {
                     self.scroll_up();
@@ -1137,9 +1495,66 @@ impl App {
             }
         }
 
-        // Arrow up/down for history (not in keymap yet)
-        if key.code == KeyCode::Up || key.code == KeyCode::Down {
-            // Could implement command history here using engine
+        // Arrow up/down and Ctrl+P/N for history navigation
+        // Only when not in search mode and input is empty (or at boundaries)
+        if self.app_mode != AppMode::Search {
+            let history_count = self.history_engine.results().len();
+            if history_count > 0 {
+                if key.code == KeyCode::Up || (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('p')) {
+                    // Navigate to previous history
+                    let new_index = match self.history_index {
+                        None => 0,
+                        Some(i) if i < history_count - 1 => i + 1,
+                        Some(i) => i,
+                    };
+                    if self.history_index != Some(new_index) || self.input.is_empty() {
+                        self.history_index = Some(new_index);
+                        let idx = history_count - 1 - new_index;
+                        if let Some(result) = self.history_engine.results().get(idx) {
+                            self.input = result.content.clone();
+                            self.cursor_position = self.input.len();
+                        }
+                    }
+                } else if key.code == KeyCode::Down || (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('n')) {
+                    // Navigate to next history
+                    if let Some(i) = self.history_index {
+                        if i > 0 {
+                            let new_index = i - 1;
+                            self.history_index = Some(new_index);
+                            let idx = history_count - 1 - new_index;
+                            if let Some(result) = self.history_engine.results().get(idx) {
+                                self.input = result.content.clone();
+                                self.cursor_position = self.input.len();
+                            }
+                        } else {
+                            // Go back to empty input
+                            self.history_index = None;
+                            self.input.clear();
+                            self.cursor_position = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: Handle regular character input (not handled by keymap)
+        // This is needed because keymap only handles Ctrl+key, not regular keys
+        if let KeyCode::Char(c) = key.code {
+            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
+                // Insert character at cursor position
+                let char_idx = self.cursor_position.min(self.input.chars().count());
+                let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
+                // For Shift+Char, convert to uppercase
+                let char_to_insert = if key.modifiers == KeyModifiers::SHIFT {
+                    c.to_ascii_uppercase()
+                } else {
+                    c
+                };
+                self.input.insert(byte_idx, char_to_insert);
+                self.cursor_position += 1;
+                // Reset history navigation when user starts typing
+                self.history_index = None;
+            }
         }
     }
 }

@@ -11,7 +11,7 @@ pub mod tree;
 pub mod keymap;
 pub mod engine;
 
-pub use app::{App, AppConfig, InputMode, KeyMode, Message, MessageContent, MessageRole, ToolStatus};
+pub use app::{App, AppConfig, AppMode, InputMode, KeyMode, Message, MessageContent, MessageRole, ToolStatus};
 pub use theme::{all_theme_names, theme_display_name, IconSet, Theme, ThemeName};
 pub use transport::{
     create_transport, IpcTransport, IpcTransportConfig, OutputChunk, PipeTransport,
