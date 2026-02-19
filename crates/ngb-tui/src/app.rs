@@ -849,7 +849,8 @@ impl App {
 
         // Calculate dynamic input height based on content
         // Input area: min 1 row, max 10 rows for content
-        let input_text_width = area.width.saturating_sub(4) as usize; // subtract borders and prefix
+        // Use actual area width - the Paragraph widget wraps at full width
+        let input_text_width = area.width as usize;
         let input_text = &self.input;
 
         // Count lines: explicit newlines + wrap-based lines
@@ -964,7 +965,7 @@ impl App {
                 .enumerate()
                 .map(|(idx, msg)| {
                     let tree_prefix = self.get_message_tree_prefix(idx);
-                    Self::render_message_item(msg, self.is_message_collapsed(idx), &theme, &tree_prefix)
+                    Self::render_message_item(msg, self.is_message_collapsed(idx), &theme, &tree_prefix, area.width)
                 })
                 .collect()
         };
@@ -978,8 +979,7 @@ impl App {
 
     /// Wrap long text to fit within specified width (for chat display)
     /// Returns lines with prefix prepended: first line has full_prefix, continuation has continuation_prefix
-    fn wrap_message_text(text: &str, full_prefix: &str, continuation_prefix: &str, timestamp: &str) -> Vec<String> {
-        const DEFAULT_WIDTH: usize = 80;
+    fn wrap_message_text(text: &str, full_prefix: &str, continuation_prefix: &str, timestamp: &str, terminal_width: u16) -> Vec<String> {
         let mut result = Vec::new();
 
         // First, split by explicit newlines
@@ -989,12 +989,8 @@ impl App {
         for (line_idx, line) in explicit_lines.iter().enumerate() {
             let line_width = line.len();
 
-            // Determine available width for this line (use char count as approximation)
-            let available_width = if line_idx == 0 && is_single_line {
-                DEFAULT_WIDTH.saturating_sub(full_prefix.len() + timestamp.len())
-            } else {
-                DEFAULT_WIDTH.saturating_sub(continuation_prefix.len())
-            };
+            // Determine available width for this line using actual terminal width
+            let available_width = (terminal_width as usize).saturating_sub(continuation_prefix.len());
 
             if line_width == 0 {
                 result.push(String::new());
@@ -1048,7 +1044,7 @@ impl App {
         result
     }
 
-    fn render_message_item<'a>(msg: &'a Message, collapsed: bool, theme: &'a Theme, tree_prefix: &str) -> ListItem<'a> {
+    fn render_message_item<'a>(msg: &'a Message, collapsed: bool, theme: &'a Theme, tree_prefix: &str, terminal_width: u16) -> ListItem<'a> {
         use ratatui::style::Style;
         use ratatui::text::Line;
 
@@ -1063,7 +1059,7 @@ impl App {
                 match &msg.content {
                     MessageContent::Text(text) => {
                         // Wrap long text: prefix for first line is user_prefix + timestamp, continuation uses user_prefix
-                        let wrapped_lines = Self::wrap_message_text(text, &user_prefix, &user_prefix, &msg.timestamp);
+                        let wrapped_lines = Self::wrap_message_text(text, &user_prefix, &user_prefix, &msg.timestamp, terminal_width);
                         let lines: Vec<Line> = wrapped_lines
                             .into_iter()
                             .map(Line::from)
@@ -1078,7 +1074,7 @@ impl App {
                 match &msg.content {
                     MessageContent::Text(text) => {
                         // Wrap long text: first line gets agent_prefix + timestamp, continuation gets agent_prefix
-                        let wrapped_lines = Self::wrap_message_text(text, &agent_prefix, &agent_prefix, &msg.timestamp);
+                        let wrapped_lines = Self::wrap_message_text(text, &agent_prefix, &agent_prefix, &msg.timestamp, terminal_width);
                         let lines: Vec<Line> = wrapped_lines
                             .into_iter()
                             .map(Line::from)
@@ -1196,7 +1192,8 @@ impl App {
             } else {
                 // Calculate cursor row and column based on content
                 // Get characters before cursor position
-                let chars_before_cursor: String = self.input.chars().take(self.cursor_position).collect();
+                let cursor_pos = self.cursor_position;
+                let chars_before_cursor: String = self.input.chars().take(cursor_pos).collect();
 
                 // Find the content on the current line (after last explicit newline)
                 let last_newline_idx = chars_before_cursor.rfind('\n');
@@ -1206,27 +1203,23 @@ impl App {
                     chars_before_cursor.as_str()
                 };
 
-                // Calculate visual position on current line
+                // Calculate visual width of text on current line
                 let current_line_width = unicode_width::UnicodeWidthStr::width(current_line_content);
 
-                // Calculate wrapped lines for the current line content
-                // Each wrap adds a new line when content exceeds available width
-                let wrapped_offset = if available_width > 0 && current_line_width > available_width {
-                    // How many times we've wrapped (integer division)
-                    (current_line_width - 1) / available_width
+                // Calculate wrapped lines and position
+                // Cursor at position N means: N characters have been typed
+                // If N <= available_width, cursor is on line 0, at position N
+                // If N > available_width, cursor wraps to subsequent lines
+                let wrapped_offset = if available_width > 0 && current_line_width >= available_width {
+                    // Use ceiling division to properly handle the wrap
+                    ((current_line_width + available_width) - 1) / available_width - 1
                 } else {
                     0
                 };
 
-                // Column position on current line (within current wrap segment)
-                // Fix: at exact boundary (modulo = 0), cursor should be at last position, not 0
+                // Column position within current wrapped line
                 let col_in_line = if available_width > 0 {
-                    let mod_result = current_line_width % available_width;
-                    if mod_result == 0 && current_line_width > 0 {
-                        available_width - 1
-                    } else {
-                        mod_result
-                    }
+                    current_line_width % available_width
                 } else {
                     current_line_width
                 };
