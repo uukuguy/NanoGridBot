@@ -856,11 +856,12 @@ impl App {
         let explicit_newlines = input_text.chars().filter(|&c| c == '\n').count() as u16;
 
         // Calculate wrapped lines for each segment between newlines
+        // Use unicode width for proper visual width calculation
         let mut wrapped_lines = 0u16;
         for line in input_text.split('\n') {
-            let line_chars = line.chars().count();
-            if input_text_width > 0 && line_chars > 0 {
-                wrapped_lines += ((line_chars as f32 / input_text_width as f32).ceil() as u16).max(1);
+            let line_width = unicode_width::UnicodeWidthStr::width(line);
+            if input_text_width > 0 && line_width > 0 {
+                wrapped_lines += ((line_width as f32 / input_text_width as f32).ceil() as u16).max(1);
             } else if !line.is_empty() {
                 wrapped_lines += 1;
             }
@@ -1010,11 +1011,18 @@ impl App {
                 // Wrap long line word by word
                 let mut current_line = String::new();
                 let mut current_width = 0;
+                let mut is_first_wrapped_line = true;
                 for word in line.split_whitespace() {
                     let word_width = word.len();
                     if current_width + word_width + 1 > available_width {
                         if !current_line.is_empty() {
-                            result.push(format!("{}{}", continuation_prefix, current_line.trim()));
+                            // First wrapped segment gets full_prefix, rest get nothing
+                            if is_first_wrapped_line {
+                                result.push(format!("{}{}", full_prefix, current_line.trim()));
+                                is_first_wrapped_line = false;
+                            } else {
+                                result.push(current_line.trim().to_string());
+                            }
                         }
                         current_line = word.to_string();
                         current_width = word_width;
@@ -1028,7 +1036,11 @@ impl App {
                     }
                 }
                 if !current_line.is_empty() {
-                    result.push(format!("{}{}", continuation_prefix, current_line.trim()));
+                    if is_first_wrapped_line {
+                        result.push(format!("{}{}", full_prefix, current_line.trim()));
+                    } else {
+                        result.push(current_line.trim().to_string());
+                    }
                 }
             }
         }
