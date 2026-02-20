@@ -7,7 +7,7 @@ use ngb_config::Config;
 use ngb_core::ipc_handler::ChannelSender;
 use ngb_core::Orchestrator;
 use ngb_db::{BindingRepository, Database, TokenRepository, WorkspaceRepository};
-use ngb_tui::{AppConfig, ThemeName, PIPE_TRANSPORT, IPC_TRANSPORT, WS_TRANSPORT};
+use ngb_tui::{AppConfig, ThemeName, PIPE_TRANSPORT, IPC_TRANSPORT, WS_TRANSPORT, MOCK_TRANSPORT, SESSION_TRANSPORT};
 use ngb_types::Workspace;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -32,12 +32,18 @@ enum Commands {
     Shell {
         /// Workspace name to connect to
         workspace: String,
-        /// Transport mode: pipe, ipc, or ws
+        /// Transport mode: pipe, ipc, ws, mock, or session
         #[arg(long, default_value = "pipe")]
         transport: String,
         /// Theme name: catppuccin-mocha, catppuccin-latte, kanagawa, rose-pine, rose-pine-dawn, tokyo-night, midnight, terminal
         #[arg(long)]
         theme: Option<String>,
+        /// Use mock transport for development/demo (shortcut for --transport mock)
+        #[arg(long)]
+        mock: bool,
+        /// Resume an existing persistent container session by ID
+        #[arg(long)]
+        session_id: Option<String>,
     },
 }
 
@@ -62,18 +68,40 @@ async fn main() -> anyhow::Result<()> {
             workspace,
             transport,
             theme,
-        } => shell(workspace, transport, theme).await?,
+            mock,
+            session_id,
+        } => shell(workspace, transport, theme, mock, session_id).await?,
     }
     Ok(())
 }
 
-async fn shell(workspace: String, transport: String, theme: Option<String>) -> anyhow::Result<()> {
-    // Parse transport kind
-    let transport_kind = match transport.as_str() {
+async fn shell(
+    workspace: String,
+    transport: String,
+    theme: Option<String>,
+    mock: bool,
+    session_id: Option<String>,
+) -> anyhow::Result<()> {
+    // Resolve transport kind: --mock flag overrides --transport
+    let effective_transport = if mock {
+        "mock".to_string()
+    } else if session_id.is_some() && transport == "pipe" {
+        // If session_id provided but transport is default, use session transport
+        "session".to_string()
+    } else {
+        transport
+    };
+
+    let transport_kind = match effective_transport.as_str() {
         "pipe" => PIPE_TRANSPORT,
         "ipc" => IPC_TRANSPORT,
         "ws" => WS_TRANSPORT,
-        _ => bail!("Invalid transport: {}. Use pipe, ipc, or ws", transport),
+        "mock" => MOCK_TRANSPORT,
+        "session" => SESSION_TRANSPORT,
+        _ => bail!(
+            "Invalid transport: {}. Use pipe, ipc, ws, mock, or session",
+            effective_transport
+        ),
     };
 
     // Parse theme
@@ -101,11 +129,16 @@ async fn shell(workspace: String, transport: String, theme: Option<String>) -> a
     let data_dir = config.store_dir.join("workspaces").join(&workspace);
 
     // Create app config
-    let app_config = AppConfig::new(workspace)
+    let mut app_config = AppConfig::new(workspace)
         .with_transport(transport_kind)
         .with_theme(theme_name)
         .with_data_dir(data_dir)
-        .with_image(&config.container_image);
+        .with_image(&config.container_image)
+        .with_config(config);
+
+    if let Some(sid) = session_id {
+        app_config = app_config.with_session_id(sid);
+    }
 
     // Create app and setup transport
     let mut app = ngb_tui::App::with_config(app_config.clone())?;

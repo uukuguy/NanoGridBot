@@ -1,8 +1,12 @@
 //! Pipe transport - communicates with Claude Code via stdin/stdout pipes
+//!
+//! When a `Config` is provided, the transport performs secure mount validation
+//! and environment filtering via `ngb-core` before starting the container.
 
 use super::{OutputChunk, Transport};
 use async_trait::async_trait;
 use futures::stream::Stream;
+use ngb_config::Config;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -20,33 +24,87 @@ pub struct PipeTransport {
 }
 
 impl PipeTransport {
-    /// Create a new PipeTransport by starting a Claude Code container
-    pub async fn new(workspace_id: &str, image: &str) -> anyhow::Result<Self> {
-        // Start docker run -i
+    /// Create a new PipeTransport by starting a Claude Code container.
+    ///
+    /// When `config` is provided, the transport:
+    /// 1. Prepares the container launch (directories, settings, skills) via `spawn_blocking`
+    /// 2. Validates workspace mounts for security
+    /// 3. Filters environment variables (only API keys)
+    /// 4. Adds resource limits (`--memory=2g`, `--cpus=1.0`)
+    ///
+    /// When `config` is `None`, falls back to the simple `docker run` with no mounts.
+    pub async fn new(
+        workspace_id: &str,
+        image: &str,
+        config: Option<&Config>,
+    ) -> anyhow::Result<Self> {
+        let mut args = vec![
+            "run".to_string(),
+            "-i".to_string(),
+            "--rm".to_string(),
+        ];
+
+        if let Some(cfg) = config {
+            // Prepare container launch (directory creation, settings.json, skill sync)
+            let cfg_clone = cfg.clone();
+            let ws_id = workspace_id.to_string();
+            let env_vars = tokio::task::spawn_blocking(move || {
+                ngb_core::prepare_container_launch(&cfg_clone, &ws_id, false, &[], &[])
+            })
+            .await??;
+
+            // Validate workspace mounts
+            let mounts = ngb_core::validate_workspace_mounts(
+                workspace_id,
+                &format!("pipe:{workspace_id}"),
+                false,
+                &[],
+                cfg,
+            )?;
+
+            // Add volume mounts
+            for mount in &mounts {
+                args.push("-v".to_string());
+                args.push(mount.to_docker_arg());
+            }
+
+            // Add filtered environment variables
+            for (key, val) in &env_vars {
+                args.push("-e".to_string());
+                args.push(format!("{key}={val}"));
+            }
+
+            // Resource limits
+            args.push("--memory=2g".to_string());
+            args.push("--cpus=1.0".to_string());
+
+            // Interactive mode needs network for API access
+            args.push("--network".to_string());
+            args.push("host".to_string());
+        } else {
+            // Legacy simple mode — no mounts, just forward ANTHROPIC_API_KEY from env
+            args.push("--network".to_string());
+            args.push("host".to_string());
+            args.push("-e".to_string());
+            args.push(format!("WORKSPACE={workspace_id}"));
+            args.push("-e".to_string());
+            args.push("ANTHROPIC_API_KEY".to_string());
+        }
+
+        // Image and command
+        args.push(image.to_string());
+        args.push("bash".to_string());
+        args.push("-c".to_string());
+        args.push("exec claude".to_string());
+
         let mut child = Command::new("docker")
-            .args([
-                "run",
-                "-i",
-                "--rm",
-                "--network",
-                "host",
-                "-e",
-                &format!("WORKSPACE={}", workspace_id),
-                "-e",
-                "ANTHROPIC_API_KEY", // Will be read from env
-                image,
-                "bash", // Start bash to keep container alive
-                "-c",
-                "exec claude", // Run claude in interactive mode
-            ])
+            .args(&args)
             .stdout(std::process::Stdio::piped())
             .stdin(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()?;
 
-        // Take ownership of stdin for writing
         let stdin = child.stdin.take();
-        // Keep stdout in the child
 
         Ok(Self {
             child: Some(child),

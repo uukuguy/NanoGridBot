@@ -1,5 +1,63 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-20 - Phase 24: 容器启动流程集成
+
+### 工作概述
+
+将 ngb-core 的安全基础设施（mount_security、container_prep）和会话管理（ContainerSession）引入 TUI 传输层，同时添加 MockTransport 实现开发/演示模式。
+
+### 完成的工作
+
+#### 1. MockTransport（开发/演示模式）
+- 新建 `crates/ngb-tui/src/transport/mock.rs`
+- 实现 Transport trait，3 组预设响应循环使用
+- 100-300ms 间隔逐个 yield OutputChunk
+- 不依赖 Docker 或外部服务，适合开发调试
+
+#### 2. ContainerSession::from_existing() 构造器
+- 修改 `crates/ngb-core/src/container_session.rs`
+- 根据已知参数重建 ContainerSession，不启动新容器
+- process 设为 None（通过 IPC 目录通信）
+
+#### 3. SessionTransport（持久化容器会话）
+- 新建 `crates/ngb-tui/src/transport/session.rs`
+- 包装 ContainerSession 实现 Transport trait
+- 支持 new()（创建新会话）和 resume()（重连运行中容器）
+
+#### 4. PipeTransport 安全挂载增强
+- 修改 `crates/ngb-tui/src/transport/pipe.rs`
+- PipeTransport::new() 增加 config: Option<&Config> 参数
+- Config 存在时调用 prepare_container_launch + validate_workspace_mounts
+- 添加 -v 安全挂载、-e 过滤环境变量、--memory=2g --cpus=1.0
+
+#### 5. Transport 模块和 AppConfig 更新
+- transport/mod.rs: MOCK_TRANSPORT/SESSION_TRANSPORT 常量，create_transport 扩展
+- app.rs: AppConfig 添加 config/session_id 字段和 builder 方法
+- lib.rs: 导出新类型
+
+#### 6. CLI 更新
+- Shell 命令添加 --mock（快捷使用 mock transport）和 --session-id（恢复会话）
+- transport 支持 "mock" 和 "session" 值
+- Config 通过 with_config() 传递给 AppConfig
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo build -p ngb-tui -p ngb-cli -p ngb-core` | ✅ 零警告 |
+| `cargo test -p ngb-tui -p ngb-core` | ✅ 130 测试通过 |
+| `cargo clippy -p ngb-tui -p ngb-cli` | ✅ 零警告 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| MockTransport 响应模式 | 3 组预设循环 | 覆盖 thinking/tool/text 三种场景 |
+| PipeTransport Config 参数 | Option<&Config> | 向后兼容，None 时保持简单模式 |
+| SessionTransport 恢复策略 | 先 resume 后 new | 优先重连已有容器 |
+
+---
+
 ## 2026-02-18 - NGB Shell TUI Phase 1 完成
 
 ### 工作概述

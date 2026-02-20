@@ -30,6 +30,7 @@ use crate::keymap::{self, Action, EvalContext, KeyBinding};
 use crate::tree::{Tree, TreeNode};
 use crate::theme::{Theme, ThemeName};
 use crate::transport::{create_transport, OutputChunk, Transport, PIPE_TRANSPORT, TransportKind};
+use ngb_config::Config;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
@@ -38,7 +39,7 @@ use tokio::sync::mpsc;
 pub struct AppConfig {
     /// Workspace name to connect to
     pub workspace: String,
-    /// Transport kind (pipe, ipc, or ws)
+    /// Transport kind (pipe, ipc, ws, mock, or session)
     pub transport_kind: TransportKind,
     /// Container image name
     pub image: String,
@@ -48,6 +49,10 @@ pub struct AppConfig {
     pub ws_url: Option<String>,
     /// Theme name
     pub theme_name: ThemeName,
+    /// Full Config for secure mounts and session transport
+    pub config: Option<Config>,
+    /// Session ID for resuming a persistent container session
+    pub session_id: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -59,6 +64,8 @@ impl Default for AppConfig {
             data_dir: PathBuf::from("./data"),
             ws_url: None,
             theme_name: ThemeName::CatppuccinMocha,
+            config: None,
+            session_id: None,
         }
     }
 }
@@ -99,6 +106,18 @@ impl AppConfig {
     /// Set WebSocket URL
     pub fn with_ws_url(mut self, url: impl Into<String>) -> Self {
         self.ws_url = Some(url.into());
+        self
+    }
+
+    /// Set the full Config for secure mount validation and session transport
+    pub fn with_config(mut self, config: Config) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    /// Set session ID for resuming a persistent container session
+    pub fn with_session_id(mut self, id: impl Into<String>) -> Self {
+        self.session_id = Some(id.into());
         self
     }
 }
@@ -295,6 +314,8 @@ impl App {
             &config.image,
             config.data_dir.clone(),
             config.ws_url.clone(),
+            config.config.as_ref(),
+            config.session_id.clone(),
         )
         .await
         {

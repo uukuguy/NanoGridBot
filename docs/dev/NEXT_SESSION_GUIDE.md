@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: Phase 23 tui-markdown 统一渲染 ✅ 完成
+**Phase**: Phase 24 容器启动流程集成 ✅ 完成
 **Date**: 2026-02-20
 **Branch**: build-by-rust
-**Tests**: 10 passing, zero clippy warnings
+**Tests**: 130 passing (117 ngb-core + 13 ngb-tui), zero clippy warnings
 
 ---
 
@@ -476,13 +476,74 @@ ratatui-core = "0.1.0"
 
 ---
 
-## Phase 24: 待定
+## Phase 24: 容器启动流程集成
+
+**状态**: ✅ 完成
+**日期**: 2026-02-20
+**测试**: 130 passing, zero clippy warnings
+
+### 完成工作
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| 1 | MockTransport — 开发/演示模式 (mock.rs 新建) | ✅ |
+| 2 | ContainerSession::from_existing() 构造器 | ✅ |
+| 3 | SessionTransport — 持久化容器会话 (session.rs 新建) | ✅ |
+| 4 | PipeTransport 安全挂载增强 | ✅ |
+| 5 | Transport 模块 + AppConfig 更新 | ✅ |
+| 6 | CLI 更新 (--mock, --session-id) | ✅ |
+
+### 新增文件
+
+- `crates/ngb-tui/src/transport/mock.rs` — MockTransport，3 组预设响应循环
+- `crates/ngb-tui/src/transport/session.rs` — SessionTransport，包装 ContainerSession
+
+### 修改文件
+
+- `crates/ngb-core/src/container_session.rs` — 添加 from_existing() 构造器
+- `crates/ngb-tui/src/transport/pipe.rs` — PipeTransport::new() 增加 config 参数，安全挂载
+- `crates/ngb-tui/src/transport/mod.rs` — 添加 mock/session 模块，create_transport 扩展
+- `crates/ngb-tui/src/app.rs` — AppConfig 添加 config/session_id 字段
+- `crates/ngb-tui/src/lib.rs` — 导出新类型
+- `crates/ngb-cli/src/main.rs` — Shell 命令添加 --mock, --session-id
+
+### CLI 命令
+
+```bash
+# 开发/演示模式（无需 Docker）
+ngb shell test --mock
+
+# 持久化容器会话
+ngb shell test --transport session
+ngb shell test --session-id my-session-001
+
+# 安全挂载管道模式（默认，需要 Docker）
+ngb shell test --transport pipe
+
+# 旧模式仍然兼容
+ngb shell test
+```
+
+### 关键复用
+
+| 已有代码 | 用途 |
+|---------|------|
+| `prepare_container_launch()` | 目录创建、settings.json、技能同步 |
+| `validate_workspace_mounts()` | 构建安全挂载列表 |
+| `filter_env_vars()` | 只传递 API key |
+| `ContainerSession` | 持久容器管理 |
+| `get_container_status()` | 检查容器状态 |
+
+---
+
+## Phase 25: 待定
 
 **状态**: 🔄 规划中
 
 可能的下一阶段任务：
 - 状态栏完善（运行状态 idle/streaming/thinking、消息计数、transport 类型）
 - 退出确认对话框（自行实现，tui-confirm-dialog crate 不存在）
-- 与容器启动流程集成（真正的 agent 响应）
+- 错误处理增强（transport 连接失败重试、超时处理）
 - Vim 模式键绑定增强
 - 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
+- 端到端集成测试（MockTransport 驱动的 TUI 功能验证）

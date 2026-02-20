@@ -47,6 +47,30 @@ impl ContainerSession {
         }
     }
 
+    /// Reconstruct a session from known parameters without starting a new container.
+    ///
+    /// Used to reconnect to an existing running container. The `process` field is
+    /// set to `None` since communication happens via IPC directories, not a process handle.
+    pub fn from_existing(
+        group_folder: &str,
+        session_id: &str,
+        container_name: &str,
+        config: &Config,
+    ) -> Self {
+        let ipc_dir = config
+            .data_dir
+            .join("ipc")
+            .join(format!("session-{session_id}"));
+
+        Self {
+            group_folder: group_folder.to_string(),
+            session_id: session_id.to_string(),
+            container_name: container_name.to_string(),
+            ipc_dir,
+            process: None,
+        }
+    }
+
     /// Start the container in detached mode.
     ///
     /// Creates the IPC directories, validates mounts, and spawns a named
@@ -308,6 +332,30 @@ mod tests {
     fn new_session_not_alive() {
         let cfg = test_config();
         let mut session = ContainerSession::new("g1", "s1", &cfg);
+        assert!(!session.is_alive());
+    }
+
+    #[test]
+    fn from_existing_preserves_fields() {
+        let cfg = test_config();
+        let session =
+            ContainerSession::from_existing("test_group", "sess-002", "ngb-shell-test-abc", &cfg);
+        assert_eq!(session.group_folder, "test_group");
+        assert_eq!(session.session_id, "sess-002");
+        assert_eq!(session.container_name, "ngb-shell-test-abc");
+        assert!(session
+            .ipc_dir
+            .to_string_lossy()
+            .contains("session-sess-002"));
+        // process should be None — not alive
+        assert!(session.process.is_none());
+    }
+
+    #[test]
+    fn from_existing_not_alive() {
+        let cfg = test_config();
+        let mut session =
+            ContainerSession::from_existing("g1", "s1", "ngb-shell-g1-xyz", &cfg);
         assert!(!session.is_alive());
     }
 
