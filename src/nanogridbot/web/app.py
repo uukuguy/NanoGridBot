@@ -1094,6 +1094,171 @@ async def get_me(user: User = Depends(get_current_user)):
     )
 
 
+# ============================================================================
+# Additional Auth Endpoints (for HappyClaw frontend compatibility)
+# ============================================================================
+
+
+class AuthStatusResponse(BaseModel):
+    """Response model for auth status check."""
+    initialized: bool
+
+
+class PasswordChangeRequest(BaseModel):
+    """Request model for password change."""
+    current_password: str
+    new_password: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Request model for profile update."""
+    username: str | None = None
+    display_name: str | None = None
+    avatar_emoji: str | None = None
+    avatar_color: str | None = None
+    ai_name: str | None = None
+    ai_avatar_emoji: str | None = None
+    ai_avatar_color: str | None = None
+
+
+@app.get(
+    "/api/auth/status",
+    response_model=AuthStatusResponse,
+    tags=["auth"],
+    summary="Check auth status",
+    description="Check if the system has been initialized (has any users).",
+)
+async def check_auth_status():
+    """Check if system needs initial setup."""
+    db = web_state.db
+    if not db:
+        return AuthStatusResponse(initialized=True)
+
+    user_repo = db.get_user_repository()
+    users = await user_repo.list_users(limit=1)
+
+    # If no users exist, system needs setup
+    return AuthStatusResponse(initialized=len(users) > 0)
+
+
+@app.put(
+    "/api/auth/password",
+    response_model=AuthResponse,
+    tags=["auth"],
+    summary="Change password",
+    description="Change the current user's password.",
+)
+async def change_password(
+    password_data: PasswordChangeRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    """Change user password."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    # Verify current password
+    password_mgr = PasswordManager()
+    user_repo = db.get_user_repository()
+    current_user = await user_repo.get_user_by_id(user.id)
+
+    if not current_user or not password_mgr.verify_password(password_data.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    # Hash new password and update
+    new_hash = password_mgr.hash_password(password_data.new_password)
+    await user_repo.update_user(user.id, password_hash=new_hash)
+
+    # Create new session
+    session_mgr = SessionManager(db)
+    token = await session_mgr.create_session(
+        user_id=user.id,
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("User-Agent"),
+    )
+
+    # Get updated user
+    updated_user = await user_repo.get_user_by_id(user.id)
+
+    return AuthResponse(
+        token=token,
+        user=UserResponse(
+            id=updated_user.id,
+            username=updated_user.username,
+            email=updated_user.email,
+            role=updated_user.role,
+            is_active=updated_user.is_active,
+            is_verified=updated_user.is_verified,
+            created_at=updated_user.created_at,
+            last_login=updated_user.last_login,
+        ),
+    )
+
+
+@app.put(
+    "/api/auth/profile",
+    response_model=AuthResponse,
+    tags=["auth"],
+    summary="Update profile",
+    description="Update the current user's profile.",
+)
+async def update_profile(
+    profile_data: ProfileUpdateRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    """Update user profile."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    # Build update data
+    update_fields = {}
+    if profile_data.username is not None:
+        update_fields["username"] = profile_data.username
+    if profile_data.email is not None:
+        update_fields["email"] = profile_data.email
+
+    if update_fields:
+        user_repo = db.get_user_repository()
+        await user_repo.update_user(user.id, **update_fields)
+
+    # Create new session (to refresh token)
+    session_mgr = SessionManager(db)
+    token = await session_mgr.create_session(
+        user_id=user.id,
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("User-Agent"),
+    )
+
+    # Get updated user
+    updated_user = await user_repo.get_user_by_id(user.id)
+
+    return AuthResponse(
+        token=token,
+        user=UserResponse(
+            id=updated_user.id,
+            username=updated_user.username,
+            email=updated_user.email,
+            role=updated_user.role,
+            is_active=updated_user.is_active,
+            is_verified=updated_user.is_verified,
+            created_at=updated_user.created_at,
+            last_login=updated_user.last_login,
+        ),
+    )
+
+
 @app.post(
     "/api/auth/invite",
     response_model=InviteCodeResponse,
