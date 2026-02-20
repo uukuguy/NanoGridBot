@@ -6,7 +6,7 @@
 pub mod app;
 pub mod theme;
 pub mod transport;
-pub mod syntax;
+
 pub mod tree;
 pub mod keymap;
 pub mod engine;

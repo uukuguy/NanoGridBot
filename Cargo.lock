@@ -1754,7 +1754,6 @@ dependencies = [
  "ratatui-core",
  "serde",
  "serde_json",
- "syntect",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",

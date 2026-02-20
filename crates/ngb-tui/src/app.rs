@@ -1089,14 +1089,29 @@ impl App {
                             .style(Style::default().fg(color))
                     }
                     MessageContent::CodeBlock { language, code } => {
-                        // Use syntax highlighting
-                        let highlighted = crate::syntax::highlight_code(code, language);
-                        let cb = icons.code_block;
-                        let block_header = format!("{} {} {}", cb, language, cb);
-                        let lines: Vec<Line> = vec![
-                            Line::from(format!("{}{}", tree_prefix, block_header)),
-                            Line::from(highlighted),
-                        ];
+                        // Render code block via tui-markdown
+                        let md_src = format!("```{}\n{}\n```", language, code);
+                        let md_text = tui_markdown::from_str(&md_src);
+                        let mut lines: Vec<Line> = Vec::new();
+                        for (i, md_line) in md_text.lines.into_iter().enumerate() {
+                            let prefix = if i == 0 {
+                                format!("{}{} ", tree_prefix, icons.code_block)
+                            } else {
+                                format!("{}  ", tree_prefix)
+                            };
+                            let mut spans = vec![ratatui::text::Span::raw(prefix)];
+                            for s in md_line.spans {
+                                let style = ratatui::style::Style {
+                                    fg: s.style.fg.map(Self::convert_color),
+                                    bg: s.style.bg.map(Self::convert_color),
+                                    add_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.add_modifier.bits()),
+                                    sub_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.sub_modifier.bits()),
+                                    ..Default::default()
+                                };
+                                spans.push(ratatui::text::Span::styled(s.content.into_owned(), style));
+                            }
+                            lines.push(Line::from(spans));
+                        }
                         ListItem::new(lines)
                             .style(Style::default().fg(theme.warning))
                     }
