@@ -930,6 +930,31 @@ impl App {
         }
     }
 
+    /// Convert ratatui_core::style::Style to ratatui::style::Style
+    fn convert_style(s: ratatui_core::style::Style) -> ratatui::style::Style {
+        ratatui::style::Style {
+            fg: s.fg.map(Self::convert_color),
+            bg: s.bg.map(Self::convert_color),
+            add_modifier: ratatui::style::Modifier::from_bits_truncate(s.add_modifier.bits()),
+            sub_modifier: ratatui::style::Modifier::from_bits_truncate(s.sub_modifier.bits()),
+            ..Default::default()
+        }
+    }
+
+    /// Render markdown source into Lines with prefixes via tui-markdown.
+    /// `first_prefix` is used for the first line, `rest_prefix` for subsequent lines.
+    fn render_markdown_lines(md_src: &str, first_prefix: &str, rest_prefix: &str) -> Vec<Line<'static>> {
+        let md_text = tui_markdown::from_str(md_src);
+        md_text.lines.into_iter().enumerate().map(|(i, md_line)| {
+            let prefix = if i == 0 { first_prefix } else { rest_prefix };
+            let mut spans = vec![Span::raw(prefix.to_string())];
+            for s in md_line.spans {
+                spans.push(Span::styled(s.content.into_owned(), Self::convert_style(s.style)));
+            }
+            Line::from(spans)
+        }).collect()
+    }
+
     /// Wrap long text to fit within specified width (for chat display)
     /// Returns lines with prefix prepended: first line has full_prefix, continuation has continuation_prefix
     fn wrap_message_text(text: &str, full_prefix: &str, continuation_prefix: &str, timestamp: &str, terminal_width: u16) -> Vec<String> {
@@ -1026,29 +1051,8 @@ impl App {
             MessageRole::Agent => {
                 match &msg.content {
                     MessageContent::Text(text) => {
-                        // Render markdown for agent messages using tui_markdown
-                        let md_text = tui_markdown::from_str(text);
-                        let mut lines: Vec<Line> = Vec::new();
-                        for (i, md_line) in md_text.lines.into_iter().enumerate() {
-                            let prefix = if i == 0 {
-                                format!("{}{} ", &agent_prefix, &msg.timestamp)
-                            } else {
-                                agent_prefix.clone()
-                            };
-                            let mut spans = vec![ratatui::text::Span::raw(prefix)];
-                            // Convert ratatui-core Spans to ratatui Spans
-                            for s in md_line.spans {
-                                let style = ratatui::style::Style {
-                                    fg: s.style.fg.map(|c| Self::convert_color(c)),
-                                    bg: s.style.bg.map(|c| Self::convert_color(c)),
-                                    add_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.add_modifier.bits()),
-                                    sub_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.sub_modifier.bits()),
-                                    ..Default::default()
-                                };
-                                spans.push(ratatui::text::Span::styled(s.content.into_owned(), style));
-                            }
-                            lines.push(Line::from(spans));
-                        }
+                        let first = format!("{}{} ", &agent_prefix, &msg.timestamp);
+                        let lines = Self::render_markdown_lines(text, &first, &agent_prefix);
                         ListItem::new(lines)
                             .style(Style::default().fg(theme.agent_message))
                     }
@@ -1089,29 +1093,10 @@ impl App {
                             .style(Style::default().fg(color))
                     }
                     MessageContent::CodeBlock { language, code } => {
-                        // Render code block via tui-markdown
                         let md_src = format!("```{}\n{}\n```", language, code);
-                        let md_text = tui_markdown::from_str(&md_src);
-                        let mut lines: Vec<Line> = Vec::new();
-                        for (i, md_line) in md_text.lines.into_iter().enumerate() {
-                            let prefix = if i == 0 {
-                                format!("{}{} ", tree_prefix, icons.code_block)
-                            } else {
-                                format!("{}  ", tree_prefix)
-                            };
-                            let mut spans = vec![ratatui::text::Span::raw(prefix)];
-                            for s in md_line.spans {
-                                let style = ratatui::style::Style {
-                                    fg: s.style.fg.map(Self::convert_color),
-                                    bg: s.style.bg.map(Self::convert_color),
-                                    add_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.add_modifier.bits()),
-                                    sub_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.sub_modifier.bits()),
-                                    ..Default::default()
-                                };
-                                spans.push(ratatui::text::Span::styled(s.content.into_owned(), style));
-                            }
-                            lines.push(Line::from(spans));
-                        }
+                        let first = format!("{}{} ", tree_prefix, icons.code_block);
+                        let rest = format!("{}  ", tree_prefix);
+                        let lines = Self::render_markdown_lines(&md_src, &first, &rest);
                         ListItem::new(lines)
                             .style(Style::default().fg(theme.warning))
                     }
