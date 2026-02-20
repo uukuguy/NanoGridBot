@@ -1179,3 +1179,230 @@ async def get_audit_events(
         )
         for e in events
     ]
+
+
+# ============================================================================
+# Memory API
+# ============================================================================
+
+
+from nanogridbot.memory import MemoryService, create_memory_service
+
+
+class ConversationResponse(BaseModel):
+    """Response model for conversation archive."""
+    title: str
+    path: str
+    size: int
+    modified: str
+
+
+class ConversationListResponse(BaseModel):
+    """Response model for conversation list."""
+    conversations: list[ConversationResponse]
+    total: int
+
+
+class DailyConversationsResponse(BaseModel):
+    """Response model for conversations grouped by date."""
+    date: str
+    conversations: list[dict[str, Any]]
+
+
+class MemoryNoteCreate(BaseModel):
+    """Request model for creating a memory note."""
+    title: str
+    content: str
+    memory_type: str = "note"
+    tags: list[str] = []
+    group_folder: str | None = None
+
+
+class MemoryNoteResponse(BaseModel):
+    """Response model for memory note."""
+    title: str
+    path: str
+    size: int
+    modified: str
+
+
+class DailySummaryResponse(BaseModel):
+    """Response model for daily summary."""
+    date: str
+    summary: str
+    conversation_count: int
+    key_topics: list[str]
+
+
+@app.get(
+    "/api/memory/conversations",
+    response_model=ConversationListResponse,
+    tags=["memory"],
+    summary="List conversation archives",
+    description="List all conversation archives for the user.",
+)
+async def list_conversations(
+    group_folder: str | None = Query(None, description="Filter by group folder"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum conversations to return"),
+    user: User = Depends(get_current_user),
+):
+    """List conversation archives."""
+    memory_service = create_memory_service(user_id=user.id)
+    conversations = memory_service.list_conversations(
+        user_id=user.id,
+        group_folder=group_folder,
+        limit=limit,
+    )
+    return ConversationListResponse(
+        conversations=conversations,
+        total=len(conversations),
+    )
+
+
+@app.get(
+    "/api/memory/conversations/{file_path:path}",
+    tags=["memory"],
+    summary="Get conversation content",
+    description="Get the content of a conversation archive.",
+)
+async def get_conversation(
+    file_path: str,
+    user: User = Depends(get_current_user),
+):
+    """Get conversation content."""
+    memory_service = create_memory_service(user_id=user.id)
+    content = memory_service.get_conversation(file_path)
+
+    if content is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    return {"content": content}
+
+
+@app.get(
+    "/api/memory/conversations/by-date",
+    response_model=list[DailyConversationsResponse],
+    tags=["memory"],
+    summary="List conversations by date",
+    description="List conversation archives grouped by date.",
+)
+async def list_conversations_by_date(
+    group_folder: str | None = Query(None, description="Filter by group folder"),
+    start_date: str | None = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: str | None = Query(None, description="End date (YYYY-MM-DD)"),
+    user: User = Depends(get_current_user),
+):
+    """List conversations grouped by date."""
+    memory_service = create_memory_service(user_id=user.id)
+    return memory_service.list_by_date(
+        user_id=user.id,
+        group_folder=group_folder,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@app.post(
+    "/api/memory/notes",
+    response_model=MemoryNoteResponse,
+    tags=["memory"],
+    summary="Create memory note",
+    description="Create a new memory note.",
+)
+async def create_memory_note(
+    note: MemoryNoteCreate,
+    user: User = Depends(get_current_user),
+):
+    """Create a new memory note."""
+    memory_service = create_memory_service(user_id=user.id)
+    file_path = memory_service.create_memory_note(
+        user_id=user.id,
+        group_folder=note.group_folder,
+        title=note.title,
+        content=note.content,
+        memory_type=note.memory_type,
+        tags=note.tags,
+    )
+
+    stat = file_path.stat()
+    return MemoryNoteResponse(
+        title=note.title,
+        path=str(file_path),
+        size=stat.st_size,
+        modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    )
+
+
+@app.get(
+    "/api/memory/notes",
+    response_model=list[MemoryNoteResponse],
+    tags=["memory"],
+    summary="Search memory notes",
+    description="Search memory notes by content or tags.",
+)
+async def search_memory_notes(
+    q: str | None = Query(None, description="Search query"),
+    tags: str | None = Query(None, description="Comma-separated tags"),
+    memory_type: str | None = Query(None, description="Filter by memory type"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results"),
+    user: User = Depends(get_current_user),
+):
+    """Search memory notes."""
+    memory_service = create_memory_service(user_id=user.id)
+
+    tag_list = [t.strip() for t in tags.split(",")] if tags else None
+
+    results = memory_service.search_memories(
+        user_id=user.id,
+        query=q,
+        tags=tag_list,
+        memory_type=memory_type,
+        limit=limit,
+    )
+
+    return [
+        MemoryNoteResponse(
+            title=r["title"],
+            path=r["path"],
+            size=r["size"],
+            modified=r["modified"],
+        )
+        for r in results
+    ]
+
+
+@app.get(
+    "/api/memory/daily/{date}",
+    response_model=DailySummaryResponse,
+    tags=["memory"],
+    summary="Get daily summary",
+    description="Get or generate daily summary for a specific date.",
+)
+async def get_daily_summary(
+    date: str,
+    group_folder: str | None = Query(None, description="Filter by group folder"),
+    user: User = Depends(get_current_user),
+):
+    """Get daily summary."""
+    memory_service = create_memory_service(user_id=user.id)
+    summary = memory_service.get_daily_summary(
+        user_id=user.id,
+        group_folder=group_folder,
+        date=date,
+    )
+
+    if summary is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No data found for date {date}",
+        )
+
+    return DailySummaryResponse(
+        date=summary.date,
+        summary=summary.summary,
+        conversation_count=summary.conversation_count,
+        key_topics=summary.key_topics,
+    )
