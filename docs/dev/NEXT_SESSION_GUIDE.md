@@ -2,7 +2,7 @@
 
 ## Current Status
 
-**Phase**: TUI 输入组件重构 ✅ 完成
+**Phase**: Phase 23 tui-markdown 统一渲染 ✅ 完成
 **Date**: 2026-02-20
 **Branch**: build-by-rust
 **Tests**: 10 passing, zero clippy warnings
@@ -192,7 +192,7 @@ make install
 
 | Task | 内容 | 状态 |
 |------|------|------|
-| 1 | 语法高亮 (syntect) - syntax.rs | ✅ |
+| 1 | 语法高亮 (syntect) - syntax.rs | ✅ → 已被 tui-markdown 替代 (Phase 23) |
 | 2 | 树形视图 (Tree) - tree.rs | ✅ 已集成 |
 | 3 | 条件键绑定系统 - keymap.rs | ✅ 已集成 |
 | 4 | Engine 抽象层 - engine.rs | ✅ 已集成 |
@@ -426,13 +426,63 @@ tui-markdown = "0.3"
 
 ---
 
-## Phase 23: 待定
+## Phase 23: tui-markdown 统一渲染 + syntect 移除 + 代码重构
+
+**状态**: ✅ 完成
+**日期**: 2026-02-20
+**测试**: 编译通过, zero clippy warnings
+
+### 完成工作
+
+1. **Agent 消息 Markdown 渲染** (fd0c39f):
+   - 集成 `tui_markdown::from_str()` 渲染 agent 文本消息
+   - 添加 `ratatui-core = "0.1.0"` 作为类型桥接
+   - 添加 `convert_color()` 桥接函数（ratatui-core → ratatui 0.29）
+
+2. **移除 syntect，统一用 tui-markdown** (1863d84):
+   - 删除 `syntax.rs` 模块（116 行）
+   - 移除 `syntect = "5.2"` 依赖
+   - CodeBlock 渲染改用 `tui-markdown`（将代码包装为 markdown 代码块再渲染）
+
+3. **提取公共方法，消除重复代码** (952f5da):
+   - 新增 `convert_style()`: 将 ratatui-core Style 整体转换为 ratatui Style
+   - 新增 `render_markdown_lines()`: 统一 Text 和 CodeBlock 的 markdown→Line 渲染逻辑
+   - Text 渲染：25 行 → 4 行
+   - CodeBlock 渲染：20 行 → 6 行
+   - 净减 15 行
+
+### 关键技术决策
+
+- `tui-markdown` 0.3 依赖 `ratatui-core` 0.1.0，而项目用 `ratatui` 0.29，Color/Style 类型不兼容
+- 通过 `convert_color`/`convert_style` 桥接函数解决类型差异
+- 升级到 ratatui 0.30 的瓶颈：`tui-textarea` 0.7 尚未适配 0.30
+
+### 修改文件
+
+- `crates/ngb-tui/Cargo.toml`: +ratatui-core, -syntect
+- `crates/ngb-tui/src/syntax.rs`: 删除
+- `crates/ngb-tui/src/lib.rs`: 移除 `pub mod syntax`
+- `crates/ngb-tui/src/app.rs`: markdown 渲染集成 + 公共方法提取
+
+### 依赖版本
+
+```toml
+ratatui = "0.29"
+tui-textarea = "0.7"
+tui-markdown = "0.3"
+ratatui-core = "0.1.0"
+# syntect 已移除
+```
+
+---
+
+## Phase 24: 待定
 
 **状态**: 🔄 规划中
 
 可能的下一阶段任务：
-- TUI 代码块渲染增强 (tui-markdown 替代 syntect)
-- 确认对话框组件
-- 状态栏完善（token 计数、模型名称等）
+- 状态栏完善（运行状态 idle/streaming/thinking、消息计数、transport 类型）
+- 退出确认对话框（自行实现，tui-confirm-dialog crate 不存在）
 - 与容器启动流程集成（真正的 agent 响应）
 - Vim 模式键绑定增强
+- 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
