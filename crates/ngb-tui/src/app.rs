@@ -905,6 +905,31 @@ impl App {
         f.render_stateful_widget(list, area, &mut self.chat_state);
     }
 
+    /// Convert ratatui_core::style::Color to ratatui::style::Color
+    fn convert_color(c: ratatui_core::style::Color) -> ratatui::style::Color {
+        match c {
+            ratatui_core::style::Color::Reset => ratatui::style::Color::Reset,
+            ratatui_core::style::Color::Black => ratatui::style::Color::Black,
+            ratatui_core::style::Color::Red => ratatui::style::Color::Red,
+            ratatui_core::style::Color::Green => ratatui::style::Color::Green,
+            ratatui_core::style::Color::Yellow => ratatui::style::Color::Yellow,
+            ratatui_core::style::Color::Blue => ratatui::style::Color::Blue,
+            ratatui_core::style::Color::Magenta => ratatui::style::Color::Magenta,
+            ratatui_core::style::Color::Cyan => ratatui::style::Color::Cyan,
+            ratatui_core::style::Color::Gray => ratatui::style::Color::Gray,
+            ratatui_core::style::Color::DarkGray => ratatui::style::Color::DarkGray,
+            ratatui_core::style::Color::LightRed => ratatui::style::Color::LightRed,
+            ratatui_core::style::Color::LightGreen => ratatui::style::Color::LightGreen,
+            ratatui_core::style::Color::LightYellow => ratatui::style::Color::LightYellow,
+            ratatui_core::style::Color::LightBlue => ratatui::style::Color::LightBlue,
+            ratatui_core::style::Color::LightMagenta => ratatui::style::Color::LightMagenta,
+            ratatui_core::style::Color::LightCyan => ratatui::style::Color::LightCyan,
+            ratatui_core::style::Color::White => ratatui::style::Color::White,
+            ratatui_core::style::Color::Rgb(r, g, b) => ratatui::style::Color::Rgb(r, g, b),
+            ratatui_core::style::Color::Indexed(i) => ratatui::style::Color::Indexed(i),
+        }
+    }
+
     /// Wrap long text to fit within specified width (for chat display)
     /// Returns lines with prefix prepended: first line has full_prefix, continuation has continuation_prefix
     fn wrap_message_text(text: &str, full_prefix: &str, continuation_prefix: &str, timestamp: &str, terminal_width: u16) -> Vec<String> {
@@ -1001,12 +1026,29 @@ impl App {
             MessageRole::Agent => {
                 match &msg.content {
                     MessageContent::Text(text) => {
-                        // Wrap long text: first line gets agent_prefix + timestamp, continuation gets agent_prefix
-                        let wrapped_lines = Self::wrap_message_text(text, &agent_prefix, &agent_prefix, &msg.timestamp, terminal_width);
-                        let lines: Vec<Line> = wrapped_lines
-                            .into_iter()
-                            .map(Line::from)
-                            .collect();
+                        // Render markdown for agent messages using tui_markdown
+                        let md_text = tui_markdown::from_str(text);
+                        let mut lines: Vec<Line> = Vec::new();
+                        for (i, md_line) in md_text.lines.into_iter().enumerate() {
+                            let prefix = if i == 0 {
+                                format!("{}{} ", &agent_prefix, &msg.timestamp)
+                            } else {
+                                agent_prefix.clone()
+                            };
+                            let mut spans = vec![ratatui::text::Span::raw(prefix)];
+                            // Convert ratatui-core Spans to ratatui Spans
+                            for s in md_line.spans {
+                                let style = ratatui::style::Style {
+                                    fg: s.style.fg.map(|c| Self::convert_color(c)),
+                                    bg: s.style.bg.map(|c| Self::convert_color(c)),
+                                    add_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.add_modifier.bits()),
+                                    sub_modifier: ratatui::style::Modifier::from_bits_truncate(s.style.sub_modifier.bits()),
+                                    ..Default::default()
+                                };
+                                spans.push(ratatui::text::Span::styled(s.content.into_owned(), style));
+                            }
+                            lines.push(Line::from(spans));
+                        }
                         ListItem::new(lines)
                             .style(Style::default().fg(theme.agent_message))
                     }

@@ -26,6 +26,7 @@ tui-textarea = "0.7"
 # Markdown rendering
 pulldown-cmark = "0.12"
 tui-markdown = "0.3"
+ratatui-core = "0.1.0"
 
 # Syntax highlighting
 syntect = "5.2"
