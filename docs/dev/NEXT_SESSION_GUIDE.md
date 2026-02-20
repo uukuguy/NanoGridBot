@@ -94,12 +94,14 @@ git add src/nanogridbot/types.py
 git commit -m "feat: add multi-user system (Phase 1-5)"
 ```
 
-### 优先级 2: 单元测试
+### 优先级 2: 单元测试 ✅
 
-新增测试文件:
-- tests/unit/test_auth/
-- tests/unit/test_rbac/
-- tests/unit/test_security/
+已创建测试文件:
+- `tests/unit/test_auth.py` - 20 个测试 (PasswordManager, SessionManager, LoginLockManager, InviteCodeManager)
+- `tests/unit/test_rbac.py` - 25 个测试 (has_permission, has_role, PermissionChecker, require_permission decorator)
+- `tests/unit/test_security_encryption.py` - 30 个测试 (cipher, EncryptionService)
+
+**测试结果**: 75 passed ✅
 
 ### 优先级 3: Phase 6-10 (可选)
 
