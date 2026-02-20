@@ -1451,3 +1451,452 @@ impl App {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Test helpers & inline test modules
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+impl App {
+    /// Expose process_chunk for tests
+    pub(crate) fn test_process_chunk(&mut self, chunk: OutputChunk) {
+        self.process_chunk(chunk);
+    }
+
+    /// Expose handle_key for tests
+    pub(crate) fn test_handle_key(&mut self, key: event::KeyEvent) {
+        self.handle_key(key);
+    }
+
+    /// Get textarea content as a single string
+    pub(crate) fn test_textarea_content(&self) -> String {
+        self.textarea.lines().join("\n")
+    }
+
+    /// Get current app mode
+    pub(crate) fn test_app_mode(&self) -> AppMode {
+        self.app_mode
+    }
+
+    /// Get current search query
+    pub(crate) fn test_search_query(&self) -> &str {
+        &self.search_query
+    }
+
+    /// Get quit flag
+    pub(crate) fn test_quit(&self) -> bool {
+        self.quit
+    }
+
+}
+
+/// Helper: build a KeyEvent with Press kind
+#[cfg(test)]
+fn key_event(code: KeyCode, modifiers: KeyModifiers) -> event::KeyEvent {
+    event::KeyEvent {
+        code,
+        modifiers,
+        kind: KeyEventKind::Press,
+        state: event::KeyEventState::empty(),
+    }
+}
+
+// ── Chunk processing tests ──────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests_chunk {
+    use super::*;
+
+    fn app() -> App {
+        App::with_config(AppConfig::default()).unwrap()
+    }
+
+    #[test]
+    fn test_chunk_text_creates_message() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::Text("hello".into()));
+
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].role, MessageRole::Agent);
+        assert!(matches!(&app.messages[0].content, MessageContent::Text(t) if t == "hello"));
+    }
+
+    #[test]
+    fn test_chunk_text_appends() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::Text("hello".into()));
+        app.test_process_chunk(OutputChunk::Text(" world".into()));
+
+        // Should still be a single message with concatenated text
+        assert_eq!(app.messages.len(), 1);
+        assert!(matches!(&app.messages[0].content, MessageContent::Text(t) if t == "hello world"));
+    }
+
+    #[test]
+    fn test_chunk_thinking_lifecycle() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::ThinkingStart);
+        app.test_process_chunk(OutputChunk::ThinkingText("reasoning...".into()));
+        app.test_process_chunk(OutputChunk::ThinkingEnd);
+
+        // ThinkingEnd itself doesn't flush; a subsequent Text or Done does
+        app.test_process_chunk(OutputChunk::Text("answer".into()));
+
+        // Should have 2 messages: Thinking + Text
+        assert_eq!(app.messages.len(), 2);
+        assert!(matches!(&app.messages[0].content, MessageContent::Thinking(t) if t.contains("reasoning")));
+        assert!(matches!(&app.messages[1].content, MessageContent::Text(t) if t == "answer"));
+    }
+
+    #[test]
+    fn test_chunk_tool_lifecycle() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::ToolStart {
+            name: "Read".into(),
+            args: "{}".into(),
+        });
+
+        assert_eq!(app.messages.len(), 1);
+        assert!(matches!(
+            &app.messages[0].content,
+            MessageContent::ToolCall { name, status: ToolStatus::Running } if name == "Read"
+        ));
+
+        app.test_process_chunk(OutputChunk::ToolEnd {
+            name: "Read".into(),
+            success: true,
+        });
+
+        // The running message should be updated to Success
+        assert_eq!(app.messages.len(), 1);
+        assert!(matches!(
+            &app.messages[0].content,
+            MessageContent::ToolCall { name, status: ToolStatus::Success } if name == "Read"
+        ));
+    }
+
+    #[test]
+    fn test_chunk_tool_failure() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::ToolStart {
+            name: "Bash".into(),
+            args: "{}".into(),
+        });
+        app.test_process_chunk(OutputChunk::ToolEnd {
+            name: "Bash".into(),
+            success: false,
+        });
+
+        assert_eq!(app.messages.len(), 1);
+        assert!(matches!(
+            &app.messages[0].content,
+            MessageContent::ToolCall { name, status: ToolStatus::Error } if name == "Bash"
+        ));
+    }
+
+    #[test]
+    fn test_chunk_error() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::Error("something broke".into()));
+
+        assert_eq!(app.messages.len(), 1);
+        assert!(matches!(
+            &app.messages[0].content,
+            MessageContent::Error(e) if e == "something broke"
+        ));
+    }
+
+    #[test]
+    fn test_chunk_done_finalizes() {
+        let mut app = app();
+        // Start thinking but don't manually end it
+        app.test_process_chunk(OutputChunk::ThinkingStart);
+        app.test_process_chunk(OutputChunk::ThinkingText("deep thought".into()));
+        app.test_process_chunk(OutputChunk::Done);
+
+        // Done should have finalized the pending thinking
+        assert_eq!(app.messages.len(), 1);
+        assert!(matches!(&app.messages[0].content, MessageContent::Thinking(_)));
+    }
+
+    #[test]
+    fn test_chunk_mixed_sequence() {
+        let mut app = app();
+
+        // Full cycle 0 sequence: thinking → text → done
+        app.test_process_chunk(OutputChunk::ThinkingStart);
+        app.test_process_chunk(OutputChunk::ThinkingText("analyzing…".into()));
+        app.test_process_chunk(OutputChunk::ThinkingEnd);
+        app.test_process_chunk(OutputChunk::Text("Here is the answer.".into()));
+        app.test_process_chunk(OutputChunk::Done);
+
+        assert_eq!(app.messages.len(), 2);
+        assert!(matches!(&app.messages[0].content, MessageContent::Thinking(_)));
+        assert!(matches!(&app.messages[1].content, MessageContent::Text(t) if t == "Here is the answer."));
+    }
+}
+
+// ── Key handling tests ──────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests_keys {
+    use super::*;
+
+    fn app() -> App {
+        App::with_config(AppConfig::default()).unwrap()
+    }
+
+    #[test]
+    fn test_key_ctrl_c_clears_input() {
+        let mut app = app();
+        // Type something first
+        app.test_handle_key(key_event(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.test_handle_key(key_event(KeyCode::Char('i'), KeyModifiers::NONE));
+        assert!(!app.test_textarea_content().is_empty());
+
+        // Ctrl+C should clear input
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.test_textarea_content().is_empty());
+    }
+
+    #[test]
+    fn test_key_double_ctrl_c_quits() {
+        let mut app = app();
+        // Ensure textarea is empty so Ctrl+C enters "double-press" path
+        assert!(app.test_textarea_content().is_empty());
+
+        // First Ctrl+C — sets last_ctrl_c_time
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(!app.test_quit());
+
+        // Second Ctrl+C within 2 seconds — should quit
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.test_quit());
+    }
+
+    #[test]
+    fn test_key_ctrl_r_opens_search() {
+        let mut app = app();
+        assert_eq!(app.test_app_mode(), AppMode::Normal);
+
+        app.test_handle_key(key_event(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert_eq!(app.test_app_mode(), AppMode::Search);
+    }
+
+    #[test]
+    fn test_key_esc_exits_search() {
+        let mut app = app();
+        // Enter search mode first
+        app.test_handle_key(key_event(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert_eq!(app.test_app_mode(), AppMode::Search);
+
+        // Esc should exit search
+        app.test_handle_key(key_event(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.test_app_mode(), AppMode::Normal);
+    }
+
+    #[test]
+    fn test_key_search_typing() {
+        let mut app = app();
+        // Enter search mode
+        app.test_handle_key(key_event(KeyCode::Char('r'), KeyModifiers::CONTROL));
+
+        // Type in search
+        app.test_handle_key(key_event(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.test_handle_key(key_event(KeyCode::Char('i'), KeyModifiers::NONE));
+
+        assert_eq!(app.test_search_query(), "hi");
+    }
+
+    #[test]
+    fn test_key_vim_k_scrolls() {
+        let mut app = app();
+        app.set_key_mode(KeyMode::Vim);
+
+        // Add some messages for scrolling
+        for i in 0..5 {
+            app.messages.push(Message {
+                role: MessageRole::Agent,
+                content: MessageContent::Text(format!("msg {}", i)),
+                timestamp: "00:00".into(),
+                parent_id: None,
+            });
+        }
+
+        // Scroll down first so we can scroll up
+        *app.chat_state.offset_mut() = 3;
+
+        let offset_before = app.chat_state.offset();
+        app.test_handle_key(key_event(KeyCode::Char('k'), KeyModifiers::NONE));
+        assert!(app.chat_state.offset() < offset_before);
+    }
+
+    #[test]
+    fn test_key_vim_j_scrolls() {
+        let mut app = app();
+        app.set_key_mode(KeyMode::Vim);
+
+        // Add messages
+        for i in 0..5 {
+            app.messages.push(Message {
+                role: MessageRole::Agent,
+                content: MessageContent::Text(format!("msg {}", i)),
+                timestamp: "00:00".into(),
+                parent_id: None,
+            });
+        }
+
+        let offset_before = app.chat_state.offset();
+        app.test_handle_key(key_event(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert!(app.chat_state.offset() > offset_before);
+    }
+
+    #[test]
+    fn test_key_page_up_down() {
+        let mut app = app();
+
+        // Add messages to enable scrolling
+        for i in 0..20 {
+            app.messages.push(Message {
+                role: MessageRole::Agent,
+                content: MessageContent::Text(format!("msg {}", i)),
+                timestamp: "00:00".into(),
+                parent_id: None,
+            });
+        }
+
+        // PageDown should increase offset
+        app.test_handle_key(key_event(KeyCode::PageDown, KeyModifiers::NONE));
+        assert!(app.chat_state.offset() > 0);
+
+        let offset_after_down = app.chat_state.offset();
+
+        // PageUp should decrease offset
+        app.test_handle_key(key_event(KeyCode::PageUp, KeyModifiers::NONE));
+        assert!(app.chat_state.offset() < offset_after_down);
+    }
+
+    #[test]
+    fn test_key_ctrl_p_history() {
+        let mut app = app();
+
+        // Add history entries
+        app.add_to_history("first command");
+        app.add_to_history("second command");
+
+        // Ctrl+P should navigate to most recent history
+        app.test_handle_key(key_event(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert_eq!(app.test_textarea_content(), "second command");
+
+        // Another Ctrl+P should go to older entry
+        app.test_handle_key(key_event(KeyCode::Char('p'), KeyModifiers::CONTROL));
+        assert_eq!(app.test_textarea_content(), "first command");
+    }
+
+    #[test]
+    fn test_key_submit() {
+        let mut app = app();
+
+        // Type a message
+        app.test_handle_key(key_event(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.test_handle_key(key_event(KeyCode::Char('i'), KeyModifiers::NONE));
+        assert_eq!(app.test_textarea_content(), "hi");
+
+        // Press Enter to submit
+        app.test_handle_key(key_event(KeyCode::Enter, KeyModifiers::NONE));
+
+        // Message should appear in messages list
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].role, MessageRole::User);
+        assert!(matches!(&app.messages[0].content, MessageContent::Text(t) if t == "hi"));
+
+        // Textarea should be cleared
+        assert!(app.test_textarea_content().is_empty());
+    }
+}
+
+// ── Search tests ────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests_search {
+    use super::*;
+
+    fn app_with_history() -> App {
+        let mut app = App::with_config(AppConfig::default()).unwrap();
+        app.add_to_history("git status");
+        app.add_to_history("git diff");
+        app.add_to_history("cargo test");
+        app.add_to_history("cargo build");
+        app.add_to_history("ls -la");
+        app
+    }
+
+    #[test]
+    fn test_search_empty_returns_all() {
+        let app = app_with_history();
+        let results = app.search_history("");
+        assert_eq!(results.len(), 5);
+    }
+
+    #[test]
+    fn test_search_filters() {
+        let app = app_with_history();
+        let results = app.search_history("git");
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|r| r.contains("git")));
+    }
+
+    #[test]
+    fn test_search_case_insensitive() {
+        let app = app_with_history();
+        let results = app.search_history("GIT");
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_search_no_match() {
+        let app = app_with_history();
+        let results = app.search_history("python");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_partial_match() {
+        let app = app_with_history();
+        let results = app.search_history("cargo");
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().any(|r| r.contains("test")));
+        assert!(results.iter().any(|r| r.contains("build")));
+    }
+}
+
+// ── Theme tests ─────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests_theme {
+    use super::*;
+    use crate::theme::{all_theme_names, Theme, ThemeName};
+
+    #[test]
+    fn test_theme_default() {
+        let app = App::with_config(AppConfig::default()).unwrap();
+        assert_eq!(app.theme.name, ThemeName::CatppuccinMocha);
+    }
+
+    #[test]
+    fn test_theme_config() {
+        let config = AppConfig::default().with_theme(ThemeName::TokyoNight);
+        let app = App::with_config(config).unwrap();
+        assert_eq!(app.theme.name, ThemeName::TokyoNight);
+    }
+
+    #[test]
+    fn test_all_themes_valid() {
+        for name in all_theme_names() {
+            // Should not panic
+            let _theme = Theme::from_name(name);
+            let config = AppConfig::default().with_theme(name);
+            let _app = App::with_config(config).unwrap();
+        }
+    }
+}

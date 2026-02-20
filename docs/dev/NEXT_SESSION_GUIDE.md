@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: Phase 24 容器启动流程集成 ✅ 完成
-**Date**: 2026-02-20
+**Phase**: Phase 25 Task 1 端到端集成测试 ✅ 完成
+**Date**: 2026-02-21
 **Branch**: build-by-rust
-**Tests**: 130 passing (117 ngb-core + 13 ngb-tui), zero clippy warnings
+**Tests**: 175 passing (130 existing + 45 ngb-tui: 39 unit + 6 integration), zero clippy warnings
 
 ---
 
@@ -536,14 +536,32 @@ ngb shell test
 
 ---
 
-## Phase 25: 待定
+## Phase 25: 端到端集成测试
 
-**状态**: 🔄 规划中
+**状态**: Task 1 ✅ 完成
+**日期**: 2026-02-21
 
-可能的下一阶段任务：
-- 状态栏完善（运行状态 idle/streaming/thinking、消息计数、transport 类型）
-- 退出确认对话框（自行实现，tui-confirm-dialog crate 不存在）
-- 错误处理增强（transport 连接失败重试、超时处理）
-- Vim 模式键绑定增强
-- 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
-- 端到端集成测试（MockTransport 驱动的 TUI 功能验证）
+### Task 1: ngb-tui 端到端集成测试 ✅
+
+| 分类 | 测试数 | 内容 |
+|------|--------|------|
+| tests_chunk | 8 | OutputChunk 到 Message 转换（Text/Thinking/Tool/Error/Done） |
+| tests_keys | 10 | 键盘输入（Ctrl+C/R、搜索、Vim j/k、PageUp/Down、历史、Submit） |
+| tests_search | 5 | 历史搜索（空查询、过滤、大小写不敏感、无匹配、部分匹配） |
+| tests_theme | 3 | 主题系统（默认、配置、所有主题不 panic） |
+| integration | 6 | AppConfig builder、MockTransport 流式、App 构建 |
+
+**修改文件**:
+- `crates/ngb-tui/src/app.rs` — 添加 `#[cfg(test)]` helpers + 4 个测试模块（~250 行）
+- `crates/ngb-tui/tests/integration_tests.rs` — 新建（106 行）
+- `crates/ngb-tui/Cargo.toml` — 添加 tokio test-util dev-dependency
+
+**测试结果**: 39 unit + 6 integration = 45 tests, zero clippy warnings
+
+### 可能的后续 Tasks
+
+- Task 2: 状态栏完善（运行状态 idle/streaming/thinking、消息计数、transport 类型）
+- Task 3: 退出确认对话框（自行实现，tui-confirm-dialog crate 不存在）
+- Task 4: 错误处理增强（transport 连接失败重试、超时处理）
+- Task 5: Vim 模式键绑定增强
+- Task 6: 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
