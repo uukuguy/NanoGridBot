@@ -9,9 +9,13 @@ from nanogridbot.utils.security import (
     MountSecurityError,
     _is_path_allowed,
     _is_path_under_directory,
+    check_readonly_directory,
+    check_rw_required_directory,
+    check_symlink,
     sanitize_filename,
     validate_container_path,
     validate_mounts,
+    validate_no_symlink_escape,
 )
 
 
@@ -241,3 +245,167 @@ class TestMountSecurityError:
     def test_message(self):
         err = MountSecurityError("test error")
         assert str(err) == "test error"
+
+
+class TestCheckSymlink:
+    """Test check_symlink function."""
+
+    def test_regular_directory(self, tmp_path):
+        """Test regular directory is not a symlink."""
+        regular_dir = tmp_path / "regular"
+        regular_dir.mkdir()
+        assert check_symlink(regular_dir) is False
+
+    def test_symlink_directory(self, tmp_path):
+        """Test symlink directory is detected."""
+        target = tmp_path / "target"
+        target.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(target)
+        assert check_symlink(link) is True
+
+    def test_nested_symlink(self, tmp_path):
+        """Test nested symlink is detected."""
+        level1 = tmp_path / "level1"
+        level1.mkdir()
+        level2 = level1 / "level2"
+        level2.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(level1)
+        # Path itself is not symlink, but contains one
+        assert check_symlink(level2) is False
+
+
+class TestValidateNoSymlinkEscape:
+    """Test validate_no_symlink_escape function."""
+
+    def test_regular_path_allowed(self, mock_config, tmp_path):
+        """Test regular path is allowed."""
+        regular_dir = tmp_path / "regular"
+        regular_dir.mkdir()
+        with patch("nanogridbot.config.get_config", return_value=mock_config):
+            assert validate_no_symlink_escape(regular_dir) is True
+
+    def test_symlink_to_allowed_path(self, mock_config, tmp_path):
+        """Test symlink to allowed path is allowed."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(allowed)
+        with patch("nanogridbot.config.get_config", return_value=mock_config):
+            assert validate_no_symlink_escape(link) is True
+
+
+class TestCheckReadonlyDirectory:
+    """Test check_readonly_directory function."""
+
+    def test_ssh_directory(self, tmp_path):
+        """Test .ssh directory is detected as sensitive."""
+        ssh_dir = tmp_path / ".ssh"
+        ssh_dir.mkdir()
+        assert check_readonly_directory(ssh_dir) is True
+
+    def test_gnupg_directory(self, tmp_path):
+        """Test .gnupg directory is detected as sensitive."""
+        gnupg_dir = tmp_path / ".gnupg"
+        gnupg_dir.mkdir()
+        assert check_readonly_directory(gnupg_dir) is True
+
+    def test_nested_ssh(self, tmp_path):
+        """Test nested .ssh directory is detected."""
+        nested = tmp_path / "home" / "user" / ".ssh"
+        nested.mkdir(parents=True)
+        assert check_readonly_directory(nested) is True
+
+    def test_regular_directory(self, tmp_path):
+        """Test regular directory is not sensitive."""
+        regular = tmp_path / "documents"
+        regular.mkdir()
+        assert check_readonly_directory(regular) is False
+
+
+class TestCheckRwRequiredDirectory:
+    """Test check_rw_required_directory function."""
+
+    def test_ipc_directory(self, tmp_path):
+        """Test ipc directory requires read-write."""
+        ipc_dir = tmp_path / "ipc"
+        ipc_dir.mkdir()
+        assert check_rw_required_directory(ipc_dir) is True
+
+    def test_sessions_directory(self, tmp_path):
+        """Test sessions directory requires read-write."""
+        sessions_dir = tmp_path / "sessions"
+        sessions_dir.mkdir()
+        assert check_rw_required_directory(sessions_dir) is True
+
+    def test_claude_directory(self, tmp_path):
+        """Test .claude directory requires read-write."""
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        assert check_rw_required_directory(claude_dir) is True
+
+    def test_regular_directory(self, tmp_path):
+        """Test regular directory doesn't require read-write."""
+        regular = tmp_path / "data"
+        regular.mkdir()
+        assert check_rw_required_directory(regular) is False
+
+
+class TestNonMainGroupReadonly:
+    """Test non-main group read-only enforcement."""
+
+    @pytest.mark.asyncio
+    async def test_non_main_forced_readonly(self, mock_config, tmp_path):
+        """Test non-main group mounts are forced to read-only."""
+        groups_dir = tmp_path / "groups" / "testgroup"
+        groups_dir.mkdir(parents=True)
+        mounts = [
+            {
+                "host_path": str(groups_dir),
+                "container_path": "/workspace/group",
+                "mode": "rw",  # Requested rw but should be forced to ro
+            }
+        ]
+        with patch("nanogridbot.config.get_config", return_value=mock_config):
+            result = await validate_mounts(mounts, is_main=False, enforce_readonly=True)
+            assert len(result) == 1
+            assert result[0][2] == "ro"  # Forced to read-only
+
+    @pytest.mark.asyncio
+    async def test_rw_required_allows_rw(self, mock_config, tmp_path):
+        """Test ipc directory allows read-write for non-main groups."""
+        groups_dir = tmp_path / "groups" / "testgroup"
+        groups_dir.mkdir(parents=True)
+        ipc_dir = groups_dir / "ipc"
+        ipc_dir.mkdir()
+        mounts = [
+            {
+                "host_path": str(ipc_dir),
+                "container_path": "/workspace/ipc",
+                "mode": "rw",
+            }
+        ]
+        with patch("nanogridbot.config.get_config", return_value=mock_config):
+            result = await validate_mounts(mounts, is_main=False, enforce_readonly=True)
+            assert len(result) == 1
+            assert result[0][2] == "rw"  # IPC allows rw
+
+    @pytest.mark.asyncio
+    async def test_sensitive_directory_forced_ro(self, mock_config, tmp_path):
+        """Test sensitive directories are forced to read-only."""
+        groups_dir = tmp_path / "groups" / "testgroup"
+        groups_dir.mkdir(parents=True)
+        ssh_dir = groups_dir / ".ssh"
+        ssh_dir.mkdir()
+        mounts = [
+            {
+                "host_path": str(ssh_dir),
+                "container_path": "/workspace/.ssh",
+                "mode": "rw",
+            }
+        ]
+        with patch("nanogridbot.config.get_config", return_value=mock_config):
+            result = await validate_mounts(mounts, is_main=True, enforce_readonly=True)
+            assert len(result) == 1
+            assert result[0][2] == "ro"  # Sensitive dirs forced to ro

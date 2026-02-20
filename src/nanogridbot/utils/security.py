@@ -1,5 +1,6 @@
 """Security utilities for mount validation and path safety."""
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -10,10 +11,32 @@ class MountSecurityError(Exception):
     pass
 
 
+# Sensitive directories that should be read-only even for main group
+READONLY_DIRECTORIES = {
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    "credentials",
+    "secrets",
+    ".env",
+    ".env.local",
+    "keys",
+    "certificates",
+}
+
+# Directories that require read-write access
+RW_REQUIRED_DIRECTORIES = {
+    "ipc",
+    "sessions",
+    ".claude",
+}
+
+
 async def validate_mounts(
     mounts: list[dict[str, Any]],
     is_main: bool = False,
     allowlist: list[Path] | None = None,
+    enforce_readonly: bool = True,
 ) -> list[tuple[str, str, str]]:
     """Validate and filter mount configurations.
 
@@ -24,6 +47,7 @@ async def validate_mounts(
             - mode: str ("ro" or "rw")
         is_main: Whether this is the main group (more restrictive)
         allowlist: Additional allowed paths (defaults to project root)
+        enforce_readonly: Whether to enforce read-only for non-main groups
 
     Returns:
         List of validated (host_path, container_path, mode) tuples
@@ -39,7 +63,7 @@ async def validate_mounts(
     for mount in mounts:
         host_path = Path(mount.get("host_path", ""))
         container_path = mount.get("container_path", "")
-        mode = mount.get("mode", "ro")
+        requested_mode = mount.get("mode", "ro")
 
         # Validate host path exists
         if not host_path.exists():
@@ -48,6 +72,11 @@ async def validate_mounts(
 
         # Resolve to absolute path
         host_path = host_path.resolve()
+
+        # Check for symlinks (security enhancement)
+        if check_symlink(host_path):
+            logger.info(f"Detected symlink in mount path: {host_path}")
+            validate_no_symlink_escape(host_path)
 
         # Check against allowlist
         if not _is_path_allowed(host_path, allowlist):
@@ -64,7 +93,22 @@ async def validate_mounts(
                     f"Non-main groups can only mount paths under groups/ directory: {host_path}"
                 )
 
-        validated.append((str(host_path), container_path, mode))
+            # Enforce read-only for non-main groups (unless explicitly rw required)
+            if enforce_readonly:
+                if not check_rw_required_directory(host_path):
+                    # Force read-only for non-main groups
+                    if requested_mode == "rw":
+                        logger.info(
+                            f"Forcing read-only mount for non-main group: {host_path}"
+                        )
+                        requested_mode = "ro"
+
+        # Check for sensitive directories that should always be read-only
+        if check_readonly_directory(host_path):
+            logger.info(f"Detected sensitive directory, enforcing read-only: {host_path}")
+            requested_mode = "ro"
+
+        validated.append((str(host_path), container_path, requested_mode))
 
     return validated
 
@@ -149,6 +193,110 @@ def validate_container_path(container_path: str) -> bool:
         return False
 
     return True
+
+
+def check_symlink(path: Path) -> bool:
+    """Check if path or any parent is a symbolic link.
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if path contains symlink, False otherwise
+    """
+    # Check the path itself before resolving
+    if path.is_symlink():
+        return True
+
+    # Check parent directories (before resolving)
+    current = path
+    while current != current.parent:
+        if current.is_symlink():
+            return True
+        current = current.parent
+
+    # Also check after resolving to catch any symlinks in the chain
+    try:
+        resolved = path.resolve()
+        if resolved != path:
+            current = resolved
+            while current != current.parent:
+                if current.is_symlink():
+                    return True
+                current = current.parent
+    except (OSError, RuntimeError):
+        pass
+
+    return False
+
+
+def validate_no_symlink_escape(host_path: Path) -> bool:
+    """Validate that symlinks don't escape allowed directories.
+
+    Args:
+        host_path: Host path to validate
+
+    Returns:
+        True if safe, False if symlink escapes
+
+    Raises:
+        MountSecurityError: If symlink escapes allowed directories
+    """
+    from nanogridbot.config import get_config
+
+    config = get_config()
+    project_root = config.base_dir.resolve()
+    data_root = config.data_dir.resolve()
+    groups_root = config.groups_dir.resolve()
+
+    # Resolve the actual path (following symlinks)
+    resolved = host_path.resolve()
+
+    # Check if resolved path is within allowed roots
+    allowed_roots = [project_root, data_root, groups_root, config.store_dir.resolve()]
+
+    for root in allowed_roots:
+        try:
+            resolved.relative_to(root)
+            return True
+        except ValueError:
+            continue
+
+    raise MountSecurityError(
+        f"Symlink escapes allowed directories: {host_path} -> {resolved}"
+    )
+
+
+def check_readonly_directory(path: Path) -> bool:
+    """Check if path is under a sensitive directory that should be read-only.
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if path should be read-only
+    """
+    parts = path.parts
+    for part in parts:
+        if part in READONLY_DIRECTORIES:
+            return True
+    return False
+
+
+def check_rw_required_directory(path: Path) -> bool:
+    """Check if path requires read-write access.
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if path requires read-write access
+    """
+    parts = path.parts
+    for part in parts:
+        if part in RW_REQUIRED_DIRECTORIES:
+            return True
+    return False
 
 
 def sanitize_filename(filename: str) -> str:
