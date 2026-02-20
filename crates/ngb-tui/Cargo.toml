@@ -1,0 +1,51 @@
+[package]
+name = "ngb-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Internal crates
+ngb-types = { workspace = true }
+ngb-config = { workspace = true }
+ngb-db = { workspace = true }
+ngb-core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = "0.1"
+futures = "0.3"
+async-stream = "0.3"
+tokio-tungstenite = "0.24"
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+unicode-width = "0.2"
+tui-textarea = "0.7"
+
+# Markdown rendering
+pulldown-cmark = "0.12"
+tui-markdown = "0.3"
+ratatui-core = "0.1.0"
+
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Date/time
+chrono = { workspace = true }
+
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }

@@ -64,7 +64,8 @@ data/
 store/
 groups/
 bridge/
-container/
+container/agent-runner/node_modules/
+container/agent-runner/dist/
 github.com/
 
 # Logs
@@ -83,3 +84,6 @@ logs/
 
 # uv
 uv.lock
+
+# Rust
+target/

@@ -1,5 +1,424 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-21 - Phase 27: 输入框自动折行修复
+
+### 工作概述
+
+修复输入框两个关键 bug：中文输入 panic 退出、折行后光标位置不对。根因是 tui-textarea 不支持 word wrap，之前用 Paragraph Wrap 渲染但光标计算逻辑不一致，且错误地将字符偏移当作字节偏移使用。
+
+### 完成的工作
+
+#### 1. 中文输入 crash 修复
+- tui-textarea 的 `cursor()` 返回字符偏移 (character offset)
+- 之前代码用 `&line[..cursor_col]` 进行字节切片，中文字符 (3字节) 切到中间导致 panic
+- 改用 `char_indices().enumerate()` 同时追踪字符索引和字节索引
+
+#### 2. 自实现字符级折行渲染
+- 去掉 `Paragraph` 的 `Wrap{trim:false}` (按单词边界折行)
+- 手动遍历每个字符，用 `UnicodeWidthChar` 累加宽度
+- 超过可用宽度时断行生成新的 `Line`
+- 渲染和光标计算使用同一套逻辑
+
+#### 3. 高度计算同步
+- `draw()` 中输入框高度也改为字符级折行算法
+
+### 修改文件
+
+- `crates/ngb-tui/src/app.rs` — draw_input() 重写, draw() 高度计算重写, 新增 block_inner() 函数
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo test -p ngb-tui` | ✅ 63 测试通过 |
+| `cargo clippy -p ngb-tui -- -D warnings` | ✅ 零警告 |
+
+---
+
+## 2026-02-20 - Phase 24: 容器启动流程集成
+
+### 工作概述
+
+将 ngb-core 的安全基础设施（mount_security、container_prep）和会话管理（ContainerSession）引入 TUI 传输层，同时添加 MockTransport 实现开发/演示模式。
+
+### 完成的工作
+
+#### 1. MockTransport（开发/演示模式）
+- 新建 `crates/ngb-tui/src/transport/mock.rs`
+- 实现 Transport trait，3 组预设响应循环使用
+- 100-300ms 间隔逐个 yield OutputChunk
+- 不依赖 Docker 或外部服务，适合开发调试
+
+#### 2. ContainerSession::from_existing() 构造器
+- 修改 `crates/ngb-core/src/container_session.rs`
+- 根据已知参数重建 ContainerSession，不启动新容器
+- process 设为 None（通过 IPC 目录通信）
+
+#### 3. SessionTransport（持久化容器会话）
+- 新建 `crates/ngb-tui/src/transport/session.rs`
+- 包装 ContainerSession 实现 Transport trait
+- 支持 new()（创建新会话）和 resume()（重连运行中容器）
+
+#### 4. PipeTransport 安全挂载增强
+- 修改 `crates/ngb-tui/src/transport/pipe.rs`
+- PipeTransport::new() 增加 config: Option<&Config> 参数
+- Config 存在时调用 prepare_container_launch + validate_workspace_mounts
+- 添加 -v 安全挂载、-e 过滤环境变量、--memory=2g --cpus=1.0
+
+#### 5. Transport 模块和 AppConfig 更新
+- transport/mod.rs: MOCK_TRANSPORT/SESSION_TRANSPORT 常量，create_transport 扩展
+- app.rs: AppConfig 添加 config/session_id 字段和 builder 方法
+- lib.rs: 导出新类型
+
+#### 6. CLI 更新
+- Shell 命令添加 --mock（快捷使用 mock transport）和 --session-id（恢复会话）
+- transport 支持 "mock" 和 "session" 值
+- Config 通过 with_config() 传递给 AppConfig
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo build -p ngb-tui -p ngb-cli -p ngb-core` | ✅ 零警告 |
+| `cargo test -p ngb-tui -p ngb-core` | ✅ 130 测试通过 |
+| `cargo clippy -p ngb-tui -p ngb-cli` | ✅ 零警告 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| MockTransport 响应模式 | 3 组预设循环 | 覆盖 thinking/tool/text 三种场景 |
+| PipeTransport Config 参数 | Option<&Config> | 向后兼容，None 时保持简单模式 |
+| SessionTransport 恢复策略 | 先 resume 后 new | 优先重连已有容器 |
+
+---
+
+## 2026-02-18 - NGB Shell TUI Phase 1 完成
+
+### 工作概述
+
+完成 NGB Shell TUI 的 Phase 1 实现，包括 ngb-tui crate 骨架、Transport trait、PipeTransport 异步实现。
+
+### 完成的工作
+
+#### 1. ngb-tui crate 骨架
+- 创建 `crates/ngb-tui/Cargo.toml`，依赖 ratatui、crossterm、tokio、async-trait、futures
+- 创建基础模块结构: app.rs, transport/mod.rs, transport/pipe.rs, transport/output.rs
+
+#### 2. Transport trait 定义 (transport/mod.rs)
+- `Transport` trait: `send()`, `recv_stream()`, `interrupt()`, `close()`
+- `OutputChunk` 枚举: Text, ToolStart/ToolEnd, ThinkingStart/ThinkingText/ThinkingEnd, Done, Error
+- JSONL 解析支持
+
+#### 3. PipeTransport 实现 (transport/pipe.rs)
+- 使用 tokio::process::Command 启动 docker run -i 容器
+- `send()`: AsyncWriteExt 异步写入 stdin
+- `recv_stream()`: async_stream 实现异步读取 stdout 流
+- 使用 Arc<AtomicBool> 标记流结束状态
+- `interrupt()` / `close()` 正确关闭进程
+
+#### 4. 基础 TUI 框架 (app.rs)
+- ratatui 初始化: enable_raw_mode, EnterAlternateScreen
+- 四区域布局: Header(3) + Chat(*) + Input(3) + Status(1)
+- 基础事件处理: 按键输入、Ctrl+C 退出
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo check -p ngb-tui` | ✅ 编译通过 |
+| `cargo test -p ngb-tui` | ✅ 3 个测试通过 |
+| `cargo clippy -p ngb-tui` | ✅ 零警告 |
+| `cargo test` | ✅ 200 个测试通过 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 进程 I/O | tokio::process::ChildStdout/Stdin | 与现有运行时集成 |
+| 流读取 | async_stream crate | 简洁的 async stream 实现 |
+| 同步状态 | Arc<AtomicBool> | 跨 async 块共享结束状态 |
+
+### 下一步: Phase 2
+
+- Task 2.1: 四区域布局完善
+- Task 2.2: Chat Area + 滚动
+- Task 2.3: Input Area 多行编辑
+- Task 2.4: 代码高亮 (syntect)
+
+---
+
+## 2026-02-17 - Rust 重写 Phase 2: 核心运行时实现
+
+### 工作概述
+
+在 `build-by-rust` 分支上完成 Rust 重写 Phase 2，为 `ngb-core` 添加 8 个核心运行时模块，将其从工具库转变为完整的容器编排运行时。测试总数从 91 增长到 162。
+
+### 完成的工作
+
+#### 1. mount_security.rs — Docker 挂载安全验证 (6 测试)
+- `MountSpec` / `MountMode` 类型定义
+- `validate_group_mounts()` — 构建标准挂载 (group rw, global ro, sessions rw, ipc rw, project ro)
+- `get_allowed_mount_paths()` — 路径白名单
+- 合并 ContainerConfig 的额外挂载，验证路径遍历和白名单
+
+#### 2. container_runner.rs — Docker 容器执行 (10 测试)
+- `run_container_agent()` — 完整的容器生命周期管理
+- `build_docker_args()` — Docker 命令构建 (`--rm --network=none -v -e --memory --cpus`)
+- `parse_container_output()` — 标记器 JSON 解析 + 多重回退 (纯文本/截断)
+- `check_docker_available()` / `get_container_status()` / `cleanup_container()`
+- 超时处理: `tokio::time::timeout`
+
+#### 3. container_session.rs — 交互式容器会话 (6 测试)
+- `ContainerSession` — 命名容器 (非 `--rm`)，支持会话恢复
+- `start()` / `send()` / `receive()` / `close()` / `is_alive()`
+- 文件 IPC: 原子写入 (tmp + rename)，JSON 格式输入/输出
+- 会话目录: `data_dir/ipc/session-{session_id}/`
+
+#### 4. ipc_handler.rs — ChannelSender trait + 文件 IPC (7 测试)
+- `ChannelSender` trait: `owns_jid()` + `send_message()` (Pin<Box<dyn Future>>)
+- `IpcHandler` — per-JID watcher 任务，500ms 轮询 output 目录
+- `write_input()` / `write_output()` — 原子文件写入
+- 输出文件解析: 自动提取 text/result/message/response 字段
+
+#### 5. group_queue.rs — 并发容器管理 (12 测试) ⭐ 最高价值
+- `GroupQueue` — `Arc<Mutex<QueueInner>>` 状态管理
+- 状态机: IDLE → ACTIVE → drain_pending → next_waiting
+- 并发上限: `config.container_max_concurrent`，溢出进入 `waiting_groups`
+- 任务优先于消息处理
+- 指数退避重试: `5 * 2^(n-1)` 秒，最多 5 次
+- 关键实现: `ensure_state()` / `try_activate()` 辅助函数解决 borrow checker 冲突
+
+#### 6. task_scheduler.rs — CRON/INTERVAL/ONCE 调度 (13 测试)
+- `TaskScheduler` — 60 秒轮询检查到期任务
+- CRON: `cron` 0.12 (7-field 格式)，5-field 自动转换 (prepend "0", append "*")
+- INTERVAL: 正则解析 `^(\d+)([smhd])$` → chrono::Duration
+- ONCE: 未来时间返回 next_run，过期返回 None
+- schedule_task / cancel_task / pause_task / resume_task
+
+#### 7. router.rs — 消息路由 (7 测试)
+- `MessageRouter` — 消息 → 群组路由
+- 触发器匹配: 正则 `(?i)^@{assistant_name}\b` 或自定义 pattern
+- `route_message()` / `send_response()` / `broadcast_to_groups()`
+- `RouteResult` — matched, group_folder, group_jid
+
+#### 8. orchestrator.rs — 总协调器 (10 测试)
+- `Orchestrator` — 整合 GroupQueue, TaskScheduler, IpcHandler, MessageRouter
+- `start()` — 加载群组 → 启动子系统 → 设置 healthy
+- `run_message_loop()` — `tokio::select!` + `watch::channel` shutdown 信号
+- `poll_messages()` — 按 JID 分组 → 触发器检查 → 入队 GroupQueue
+- `HealthStatus` — 序列化健康状态快照
+- register_group / unregister_group / send_to_group
+
+#### 9. 依赖和配置更新
+- Workspace `Cargo.toml`: 添加 `cron = "0.12"`
+- `ngb-core/Cargo.toml`: 添加 `ngb-db`, `serde`, `serde_json`, `cron`, `uuid`，dev-deps 添加 `tempfile`
+- `ngb-core/src/lib.rs`: 8 个新模块声明 + re-exports
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo build` | ✅ 8 crate 全部编译 |
+| `cargo test` | ✅ 162 个测试全部通过 (91 Phase 1 + 71 Phase 2) |
+| `cargo clippy -- -D warnings` | ✅ 零警告 |
+| `cargo fmt -- --check` | ✅ 格式合规 |
+
+### 遇到的问题和解决
+
+| 问题 | 解决方案 |
+|------|----------|
+| HashMap borrow checker 冲突 (group_queue.rs) | 提取 `ensure_state()` / `try_activate()` 辅助函数 |
+| Clippy `too_many_arguments` | `#[allow(clippy::too_many_arguments)]` |
+| Clippy `for_kv_map` | 改用 `by_jid.values()` |
+| Clippy `cloned_ref_to_slice_refs` | 改用 `std::slice::from_ref()` |
+| Clippy `trim_split_whitespace` | 移除 `.trim()` 在 `.split_whitespace()` 前 |
+| Dead code warning `GroupState.jid` | `#[allow(dead_code)]` |
+| MSRV 1.75 不支持 async fn in traits | 使用 `Pin<Box<dyn Future>>` 替代 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| ChannelSender trait 异步方法 | `Pin<Box<dyn Future>>` | MSRV Rust 1.75 不支持原生 async fn in traits |
+| CRON 解析库 | `cron` 0.12 | 7-field 格式，稳定可靠 |
+| Docker 交互 | `tokio::process::Command` | 与 Python 版一致，无额外依赖 |
+| 并发锁策略 | Mutex + tokio::spawn | 避免 hold lock across await，防止死锁 |
+| IPC 文件写入 | 原子写入 (tmp + rename) | 避免竞争条件 |
+
+### 依赖图
+
+```
+ngb-types (零依赖)
+    ↓
+ngb-config (← ngb-types)
+    ↓           ↓
+ngb-db      ngb-core [Phase 1: utils + Phase 2: runtime]
+(← types    (← types + config + db)  ← NEW: ngb-db 依赖
+ + config)
+
+ngb-channels, ngb-plugins, ngb-web (← ngb-types only, stubs)
+ngb-cli (← ngb-types only, stub)
+```
+
+### 下一步: Phase 3
+
+- 实现 ngb-web: axum Web API + WebSocket
+- 实现 ngb-cli: clap CLI (serve/shell/run/logs/session)
+
+---
+
+## 2026-02-17 - Rust 重写 Phase 1: 基础层实现
+
+### 工作概述
+
+在 `build-by-rust` 分支上完成 Rust 重写 Phase 1，创建 Cargo workspace 并实现 4 个基础 crate + 4 个 stub crate。
+
+### 完成的工作
+
+#### 1. Workspace 骨架
+- 创建 `Cargo.toml` workspace root，定义 8 个 crate 成员和共享依赖
+- 创建 `rust-toolchain.toml` (stable channel)
+- 更新 `.gitignore` 添加 `target/`
+- `[profile.release]` 配置 opt-level="z", lto=true, strip=true
+
+#### 2. ngb-types (零内部依赖) — 22 个测试
+- 4 个枚举: `ChannelType` (8 平台), `MessageRole`, `ScheduleType`, `TaskStatus`
+- 7 个结构体: `Message`, `RegisteredGroup`, `ContainerConfig`, `ScheduledTask`, `ContainerOutput`, `ContainerMetric`, `RequestMetric`
+- `NanoGridBotError` 枚举 (thiserror) + `Result<T>` 类型别名
+- 全部类型带 serde roundtrip 测试和默认值验证
+
+#### 3. ngb-config (依赖 ngb-types) — 10 个测试
+- `Config` 结构体: 40+ 字段，完整移植 Python config.py
+- `Config::load()`: dotenvy + 环境变量，带默认值
+- `get_config()` / `reload_config()`: OnceLock<RwLock<Config>> 线程安全单例
+- `get_channel_config(ChannelType)`: 按平台返回配置 HashMap
+- `create_directories()`: 自动创建 data/store/groups 等 8 个目录
+- `ConfigWatcher`: notify v7 文件监听，支持回调注册
+
+#### 4. ngb-db (依赖 ngb-types + ngb-config) — 27 个测试
+- `Database`: sqlx SqlitePool，WAL 模式，foreign_keys=ON，busy_timeout=5000ms
+- Schema: 5 张表 + 5 个索引（与 Python 版完全一致）
+- `MessageRepository`: store, get_since, get_new, get_recent, delete_old + LRU 缓存 (lru crate)
+- `GroupRepository`: save(upsert), get, get_all, get_by_folder, delete, exists
+- `TaskRepository`: save(insert/update), get, get_active, get_all, get_by_group, update_status, update_next_run, delete, get_due
+- `MetricsRepository`: record_container_start/end, get_container_stats, record_request, get_request_stats
+- 全部使用 in-memory SQLite 测试
+
+#### 5. ngb-core (依赖 ngb-types + ngb-config) — 32 个测试
+- **retry.rs**: `RetryConfig` + `with_retry<F>()` 泛型异步函数，指数退避
+- **circuit_breaker.rs**: 3 状态机 (Closed/Open/HalfOpen)，failure_threshold=5，recovery_timeout=30s
+- **shutdown.rs**: `GracefulShutdown` with tokio broadcast channel，SIGINT/SIGTERM 处理
+- **rate_limiter.rs**: 滑动窗口 `RateLimiter`，VecDeque<Instant>
+- **security.rs**: `validate_container_path()`, `sanitize_filename()`, `check_path_traversal()`
+- **formatting.rs**: `format_messages_xml()`, `format_output_xml()`, `escape_xml()`, `parse_input_json()`, `serialize_output()`
+- **logging.rs**: tracing + tracing-subscriber，console (ANSI) + file (rolling) 层
+
+#### 6. Stub Crates (Phase 2+ 占位)
+- ngb-channels (Phase 4)
+- ngb-plugins (Phase 5)
+- ngb-web (Phase 3)
+- ngb-cli (Phase 3, `fn main()` 占位)
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo build` | ✅ 8 crate 全部编译 |
+| `cargo test` | ✅ 91 个测试全部通过 |
+| `cargo clippy -- -D warnings` | ✅ 零警告 |
+| `cargo fmt -- --check` | ✅ 格式合规 |
+
+### 关键技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| SQL 查询方式 | `sqlx::query()` (运行时) | 避免编译时需要 DATABASE_URL |
+| 时间戳格式 | ISO 8601 / RFC 3339 字符串 | 与 Python SQLite 格式兼容 |
+| Config 单例 | `OnceLock<RwLock<Config>>` | 线程安全，支持 reload |
+| LRU 缓存 | `std::sync::Mutex<lru::LruCache>` | 快速操作，无 I/O |
+| 文件监听 | notify v7 (独立线程) | 不与 tokio 事件循环冲突 |
+
+### 依赖图
+
+```
+ngb-types (零依赖)
+    ↓
+ngb-config (← ngb-types)
+    ↓           ↓
+ngb-db      ngb-core
+(← types    (← types + config)
+ + config)
+
+ngb-channels, ngb-plugins, ngb-web (← ngb-types only, stubs)
+ngb-cli (← ngb-types only, stub)
+```
+
+### 下一步: Phase 2
+
+- 实现 Runtime 层: Orchestrator, Router, ContainerRunner, GroupQueue, TaskScheduler, IpcHandler
+- 将在 ngb-core 中扩展这些模块
+
+---
+
+## 2026-02-17 - Rust 重写可行性评估
+
+### 工作概述
+
+对 NanoGridBot Python 代码库进行全面分析，评估 Rust 重写可行性。同时深入分析了 ZeroClaw（Rust）和 Nanobot（Python）两个参考项目，确定可复用资源和架构策略。
+
+### 完成的工作
+
+#### 1. Python 代码库分析
+- 全量分析 8,854 行源码，44 个 Python 文件
+- 逐模块评估 Rust 重写难度和收益
+- 完成 26 个 Python 依赖到 Rust crate 的映射
+
+#### 2. ZeroClaw（Rust）项目分析
+- 分析 `github.com/zeroclaw/` 全部源码（~7,269 行 channel 代码，1,017 测试）
+- 确认可直接复用：Channel trait + 4 个 channel（Telegram/Discord/Slack/WhatsApp）+ DockerRuntime
+- 架构对比结论：**只引入基础设施层，不向 ZeroClaw 架构倾斜**
+  - ZeroClaw = 单 Agent 守护进程（进程内调 LLM）
+  - NGB = 多组 Agent 控制台（容器封装 Claude Code）
+  - 两者是根本不同的架构范式
+
+#### 3. Nanobot（Python）项目分析
+- 分析 `github.com/nanobot/` 中国平台 channel 实现
+- 确认 DingTalk（245 LOC）、Feishu（310 LOC）、QQ（134 LOC）可作为 Rust 移植参考
+- 这些是 ZeroClaw 没有覆盖的关键补充
+
+#### 4. 架构决策
+- **存储**：Phase 1 用 NGB SQLite（运营数据），ZeroClaw Memory（语义搜索）后期可选
+- **扩展性**：保留 Plugin trait（生命周期 Hook），不复现 Python importlib，用 Rust 最佳实践
+- **插件系统**：静态编译 → WASM 分两步走
+- **Channel 策略**：先 Telegram + WeCom，ZeroClaw 直接引入 4 个，Nanobot 参考移植 3 个
+
+#### 5. 输出文档
+- `docs/design/RUST_REWRITE_DESIGN.md` — 完整的 Rust 重写设计文档
+  - 一、可行性评估（模块难度、依赖映射、收益、风险）
+  - 二、Rust 项目架构（Cargo workspace、依赖选型、预估代码量 ~16,450 LOC）
+  - 三、6 Phase 分阶段实施计划
+  - 四、Channel 实施顺序（含 ZeroClaw/Nanobot 复用清单）
+  - 五、架构决策（NGB vs ZeroClaw、存储、Plugin vs Skills）
+  - 六、验证方案
+
+### 关键决策记录
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| Crate 命名前缀 | `ngb-*` | 简洁，用户确认 |
+| Channel 首批 | Telegram + WeCom | teloxide 成熟 + WeCom 已是纯 HTTP |
+| 插件系统 | 静态编译 + 可选 WASM | 不复现 Python importlib，Rust 容器操控能力更强 |
+| 架构倾斜 | 不向 ZeroClaw 倾斜 | NGB 的多租户/容器封装/Web 仪表板是差异化价值 |
+| 存储方案 | NGB SQLite 为主 | 运营数据优先，语义搜索后期引入 |
+| Channel SDK | 统一用 reqwest（不用 teloxide/serenity） | 复用 ZeroClaw 模式，减少依赖 |
+
+### 下一步
+- 开始 Phase 1：创建 Cargo workspace，实现 ngb-types、ngb-config、ngb-db
+- 从 `src/nanogridbot/types.py` 开始移植 serde structs
+
+---
+
 ## 2026-02-16 - Phase 功能框架增强
 
 ### 工作概述

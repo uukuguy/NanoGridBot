@@ -1,0 +1,8 @@
+[package]
+name = "ngb-plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ngb-types = { workspace = true }
