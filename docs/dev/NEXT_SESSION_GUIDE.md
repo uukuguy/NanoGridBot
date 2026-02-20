@@ -2,18 +2,55 @@
 
 ## Current Status
 
-**Branch**: dev (merged from build-by-rust)
+**Branch**: dev (build-by-rust 已合并)
 **Date**: 2026-02-21
+**Merge Commit**: 5d84365
 
-### Rust TUI (from build-by-rust)
-- **Phase**: Phase 27 输入框自动折行修复 ✅ 完成
-- **Tests**: 259 passing (workspace), 63 ngb-tui (55 unit + 8 integration), zero clippy warnings
+### 项目现状
 
-### Python Backend (from dev)
-- **Phase**: Phase 10 HappyClaw 前端整合 ✅ 完成
-- **Project Status**: 前端已整合，后端 API 已修复，前后端可正常通信
+dev 分支现在包含两个技术栈的完整实现：
+
+| 技术栈 | 状态 | 测试 |
+|--------|------|------|
+| Rust TUI (crates/) | Phase 27 ✅ | 259 workspace + 63 TUI tests |
+| Python Backend (src/) | Phase 10 ✅ | 640+ tests |
+
+### 下一阶段重点：TUI 与 Python 后端集成
+
+TUI 目前作为独立 Rust 应用运行（通过 container pipe/ipc/ws 与 Claude Code 通信），需要与 Python NanoGridBot 后端对接：
+
+1. **通信桥接** — TUI ↔ Python backend 的消息传递机制
+2. **API 对接** — TUI 调用 NanoGridBot REST API（workspace, session, metrics）
+3. **启动流程** — `ngb shell` 命令需要先启动 Python 服务再启动 TUI
+4. **统一配置** — Rust config 和 Python config 的共享/同步
+
+### 启动命令
+
+```bash
+# Python 后端
+./start-backend.sh
+
+# React 前端
+cd frontend && npm run dev
+
+# Rust TUI (独立运行)
+ngb shell <workspace> --mock     # 开发模式
+ngb shell <workspace>            # 需要 Docker
+```
+
+### 关键文件
+
+| 文件 | 用途 |
+|------|------|
+| `crates/ngb-tui/` | Rust TUI 实现 |
+| `crates/ngb-core/` | Rust 核心运行时 |
+| `src/nanogridbot/` | Python 后端 |
+| `frontend/` | React 19 Web 前端 |
+| `container/` | Docker 容器 + agent-runner |
 
 ---
+
+## 历史进度
 
 # Rust TUI 开发进度 (build-by-rust)
 

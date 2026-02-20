@@ -1,5 +1,37 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-21 - build-by-rust 分支合并到 dev
+
+### 工作概述
+
+将 build-by-rust 分支（49 commits, Rust TUI Phase 1-27）合并到 dev 分支，完成 Rust TUI 与 Python 后端代码库的统一。
+
+### 合并细节
+
+- **冲突文件**: 1 个 — `docs/dev/NEXT_SESSION_GUIDE.md`（手动合并，两端进度都保留）
+- **自动合并**: `docs/main/WORK_LOG.md`, `.gitignore`, `Makefile`, `makefiles/variables.mk`
+- **无代码冲突**: Rust `crates/` 和 Python `src/` 目录完全独立
+
+### 合并后 dev 分支结构
+
+| 技术栈 | 目录 | 内容 |
+|--------|------|------|
+| Rust | `crates/` | 8 个 crate (ngb-tui, ngb-core, ngb-db, ngb-types, ngb-config, ngb-cli, ngb-channels, ngb-plugins, ngb-web) |
+| Python | `src/nanogridbot/` | 多用户系统 Phase 1-10, 8 messaging channels |
+| Frontend | `frontend/` | HappyClaw React 19 Web 前端 |
+| Container | `container/` | Dockerfile + agent-runner (TypeScript) |
+
+### 测试状态
+
+- Rust: 259 workspace tests + 63 TUI tests, zero clippy warnings
+- Python: 640+ tests
+
+### Commit
+
+- `5d84365` — merge: integrate build-by-rust TUI into dev branch
+
+---
+
 ## 2026-02-21 - Phase 27: 输入框自动折行修复
 
 ### 工作概述
