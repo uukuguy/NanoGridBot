@@ -1,5 +1,68 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-21 - 前端改造设计 + 实施计划（Phase A+C）
+
+### 工作概述
+
+完成 NanoGridBot 前端改造的设计文档和实施计划。本次工作不涉及代码修改，产出两个文档。
+
+### 完成的工作
+
+#### 1. HappyClaw 架构升级验证 ✅
+
+- 确认 9/9 个 HappyClaw 迁移特性全部完成
+- 验证 `check_symlink()` bug 已在上一个会话中修复
+- 全部 49 个安全测试通过，85% 覆盖率
+
+#### 2. 前端改造设计文档 ✅
+
+**文件**: `docs/plans/2026-02-21-frontend-redesign.md`
+
+- **定位**: Agent 开发调试控制台（非聊天平台）
+- **布局**: IDE 风格四面板 — 左 Workspace 列表、中 Conversation Stream、右 Inspector、底 Container Output/IPC/Metrics
+- **消息渲染**: 6 种类型区分渲染（User Message, Thinking, Tool Call, Agent Response, Code Diff, Error）
+- **页面裁剪**: 保留 Login/Register/Setup/Settings/Users，删除 GroupsPage/MonitorPage
+- **路由简化**: 7 条精简路由
+- **品牌清理**: 12+ 文件需替换 HappyClaw → NanoGridBot
+- **实施分期**: Phase A（品牌清理）→ Phase B（Debug Console 核心）→ Phase C（页面整合）→ Phase D（待定）
+
+#### 3. 实施计划文档 ✅
+
+**文件**: `docs/plans/2026-02-21-frontend-phase-ac-impl.md`
+
+Phase A（品牌清理）13 个 Task：
+- index.html, main.tsx, vite-env.d.ts, url.ts 全局变量替换
+- LoginPage, RegisterPage, SetupPage, ChatPage 品牌文本
+- NavRail, ChatSidebar, AppearanceSection, AboutSection 品牌文本
+- adapter.ts, package.json 注释和元数据
+- 全面验证
+
+Phase C（页面整合+导航精简）8 个 Task：
+- NavRail 简化为 Console/Settings/Admin
+- 移除 BottomTabBar + SwipeablePages
+- 移除 MonitorPage 和 GroupsPage 路由
+- 清理未使用 hooks
+- 全面验证
+
+### 关键决策
+
+| 决策 | 选择 | 原因 |
+|------|------|------|
+| 前端定位 | Agent 开发调试控制台 | 与 CC 交互为对话形式，但需更强数据展示 |
+| 布局方式 | IDE 四面板 | 信息集中，开发者无需离开即可查看调试信息 |
+| 导航方式 | 桌面优先 NavRail | 移除移动端底部导航和滑动切换 |
+| Phase B 规划 | 单独规划 | Debug Console 核心改造涉及大量新组件 |
+| 变量名 | `__NGB_HASH_ROUTER__` | 替代 `__HAPPYCLAW_HASH_ROUTER__` |
+
+### 文件变更
+
+| 文件 | 操作 |
+|------|------|
+| `docs/plans/2026-02-21-frontend-redesign.md` | 新建 — 设计文档 |
+| `docs/plans/2026-02-21-frontend-phase-ac-impl.md` | 新建 — 实施计划 |
+
+---
+
 ## 2026-02-21 - build-by-rust 分支合并到 dev
 
 ### 工作概述

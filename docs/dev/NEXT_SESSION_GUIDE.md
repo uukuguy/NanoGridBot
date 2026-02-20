@@ -2,27 +2,55 @@
 
 ## Current Status
 
-**Branch**: dev (build-by-rust 已合并)
+**Branch**: dev
 **Date**: 2026-02-21
-**Merge Commit**: 5d84365
+**Last Commit**: 7c8830e
 
 ### 项目现状
 
-dev 分支现在包含两个技术栈的完整实现：
+dev 分支包含三个技术栈的完整实现：
 
 | 技术栈 | 状态 | 测试 |
 |--------|------|------|
 | Rust TUI (crates/) | Phase 27 ✅ | 259 workspace + 63 TUI tests |
 | Python Backend (src/) | Phase 10 ✅ | 640+ tests |
+| React Frontend (frontend/) | HappyClaw 整合完成 | 待改造 |
 
-### 下一阶段重点：TUI 与 Python 后端集成
+### 下一阶段重点：前端改造实施（Phase A + Phase C）
 
-TUI 目前作为独立 Rust 应用运行（通过 container pipe/ipc/ws 与 Claude Code 通信），需要与 Python NanoGridBot 后端对接：
+**设计文档**: `docs/plans/2026-02-21-frontend-redesign.md`
+**实施计划**: `docs/plans/2026-02-21-frontend-phase-ac-impl.md`
 
-1. **通信桥接** — TUI ↔ Python backend 的消息传递机制
-2. **API 对接** — TUI 调用 NanoGridBot REST API（workspace, session, metrics）
-3. **启动流程** — `ngb shell` 命令需要先启动 Python 服务再启动 TUI
-4. **统一配置** — Rust config 和 Python config 的共享/同步
+#### 立即可执行：Phase A — 品牌清理（13 Tasks）
+
+将所有 HappyClaw 引用替换为 NanoGridBot，不改功能和布局。涉及 12+ 文件：
+
+- `index.html` — title, apple-mobile-web-app-title
+- `main.tsx` / `vite-env.d.ts` / `url.ts` — `__HAPPYCLAW_HASH_ROUTER__` → `__NGB_HASH_ROUTER__`
+- `LoginPage.tsx` / `RegisterPage.tsx` / `SetupPage.tsx` — 标题、footer、logo alt
+- `ChatPage.tsx` — 欢迎语 fallback
+- `NavRail.tsx` / `ChatSidebar.tsx` — logo alt、fallback name
+- `AppearanceSection.tsx` / `AboutSection.tsx` — placeholder、项目信息
+- `adapter.ts` / `package.json` — 注释、repository、author
+
+#### 紧接执行：Phase C — 页面整合 + 导航精简（8 Tasks）
+
+- NavRail 简化为 Console / Settings / Admin（移除任务、监控 Tab）
+- 移除 BottomTabBar + SwipeablePages（桌面优先）
+- 移除 MonitorPage 和 GroupsPage 路由
+- 清理未使用 hooks
+- 简化 AppLayout
+
+#### 后续规划：Phase B — Debug Console 核心改造
+
+ChatPage 改造为 IDE 风格四面板布局。需要单独设计和规划，不在 Phase A+C 范围内。
+
+### 其他待办
+
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| P2 | TUI ↔ Python 后端集成 | 通信桥接、API 对接、启动流程统一 |
+| P3 | Phase B 设计 | Debug Console 四面板核心改造 |
 
 ### 启动命令
 
@@ -42,6 +70,8 @@ ngb shell <workspace>            # 需要 Docker
 
 | 文件 | 用途 |
 |------|------|
+| `docs/plans/2026-02-21-frontend-redesign.md` | 前端改造设计文档 |
+| `docs/plans/2026-02-21-frontend-phase-ac-impl.md` | Phase A+C 实施计划 |
 | `crates/ngb-tui/` | Rust TUI 实现 |
 | `crates/ngb-core/` | Rust 核心运行时 |
 | `src/nanogridbot/` | Python 后端 |
