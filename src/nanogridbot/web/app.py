@@ -1,11 +1,12 @@
 """FastAPI application for NanoGridBot web monitoring panel."""
 
 import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -161,6 +162,28 @@ async def lifespan(app: FastAPI):
         session_mgr_instance = SessionManager(web_state.db)
         set_session_manager(session_mgr_instance)
         logger.info("Authentication system initialized")
+
+        # Create default admin user if configured and no users exist
+        from nanogridbot.config import Config
+        from nanogridbot.database.users import UserRepository
+
+        config = Config()
+        if config.default_admin_username and config.default_admin_password:
+            user_repo = UserRepository(web_state.db)
+            users = await user_repo.list_users(limit=1)
+            if not users:
+                from nanogridbot.auth.password import PasswordManager
+
+                pw_mgr = PasswordManager()
+                password_hash = pw_mgr.hash_password(config.default_admin_password)
+                user_id = await user_repo.create_user(
+                    username=config.default_admin_username,
+                    email=None,
+                    password_hash=password_hash,
+                )
+                # Assign owner role
+                await user_repo.update_user(user_id, role="owner")
+                logger.info(f"Default admin user '{config.default_admin_username}' created")
 
     yield
     logger.info("NanoGridBot Web Dashboard shutting down...")
@@ -636,12 +659,16 @@ async def create_group(
     web_state.orchestrator.registered_groups[jid] = group
 
     return {
+        "success": True,
         "jid": group.jid,
-        "name": group.name,
-        "folder": group.folder,
-        "active": False,
-        "trigger_pattern": group.trigger_pattern,
-        "requires_trigger": group.requires_trigger,
+        "group": {
+            "jid": group.jid,
+            "name": group.name,
+            "folder": group.folder,
+            "active": False,
+            "trigger_pattern": group.trigger_pattern,
+            "requires_trigger": group.requires_trigger,
+        },
     }
 
 
@@ -1595,7 +1622,7 @@ async def register(user_data: UserCreate, request: Request):
     summary="User login",
     description="Authenticate user and create a session.",
 )
-async def login(credentials: UserLogin, request: Request):
+async def login(credentials: UserLogin, request: Request, response: Response):
     """User login."""
     db = web_state.db
     if not db:
@@ -1676,6 +1703,15 @@ async def login(credentials: UserLogin, request: Request):
         )
 
         logger.info(f"User logged in: {user.username}")
+
+        # Set auth cookie
+        response.set_cookie(
+            key="auth_token",
+            value=token,
+            httponly=True,
+            samesite="lax",
+            max_age=60 * 60 * 24 * 30,  # 30 days
+        )
 
         return AuthResponse(
             token=token,

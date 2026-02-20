@@ -56,22 +56,27 @@ async def get_current_user(
     """
     db = get_database()
 
-    # Extract token from Authorization header
-    if not authorization:
+    # Extract token from Authorization header or cookie
+    token = None
+
+    # First try Authorization header
+    if authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization[7:]  # Remove "Bearer " prefix
+        else:
+            # Treat entire string as token (for compatibility)
+            token = authorization
+
+    # Fallback to cookie
+    if not token:
+        token = request.cookies.get("auth_token")
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header format",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = authorization[7:]  # Remove "Bearer " prefix
 
     # Verify session
     session_repo = db.get_session_repository()

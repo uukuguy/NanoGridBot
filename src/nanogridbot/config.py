@@ -71,6 +71,10 @@ class Config(BaseSettings):
     # CLI settings
     cli_default_group: str = "cli"
 
+    # Default admin user (for dev/debugging)
+    default_admin_username: str | None = None
+    default_admin_password: str | None = None
+
     # Container settings
     container_timeout: int = 300
     container_max_output_size: int = 100000

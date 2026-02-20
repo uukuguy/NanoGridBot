@@ -61,16 +61,16 @@ async def start_web_server(
     port: int | None = None,
 ) -> None:
     """Start the uvicorn web server."""
-    import uvicorn
+    import uvicorn as uvicorn_lib
 
     app = create_app(orchestrator)
-    server_config = uvicorn.Config(
+    server_config = uvicorn_lib.Config(
         app,
         host=host or config.web_host,
         port=port or config.web_port,
         log_level="info",
     )
-    server = uvicorn.Server(server_config)
+    server = uvicorn_lib.Server(server_config)
     await server.serve()
 
 
@@ -95,30 +95,45 @@ async def cmd_serve(args: argparse.Namespace) -> None:
         channels = await create_channels(config, db)
         orchestrator = Orchestrator(config, db, channels)
 
-        web_task = asyncio.create_task(
-            start_web_server(config, orchestrator, args.host, args.port)
-        )
-        await asyncio.sleep(1)
-
-        loop = asyncio.get_event_loop()
-        stop_event = asyncio.Event()
-
-        def signal_handler() -> None:
-            logger.info("Received shutdown signal")
-            stop_event.set()
-
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, signal_handler)
-
+        # Start orchestrator in background
         orchestrator_task = asyncio.create_task(orchestrator.start())
 
-        try:
-            await asyncio.gather(orchestrator_task, web_task, stop_event.wait())
-        except Exception as e:
-            logger.error(f"Error in main loop: {e}")
+        # Start uvicorn using run() instead of Server().serve()
+        # This allows signal handling to work properly
+        import uvicorn
+        uvicorn_app = create_app(orchestrator)
+        config_uvicorn = uvicorn.Config(
+            uvicorn_app,
+            host=args.host or config.web_host,
+            port=args.port or config.web_port,
+            log_level="info",
+        )
+        server = uvicorn.Server(config_uvicorn)
 
-        await orchestrator.stop()
+        # Create a task for uvicorn
+        async def run_server():
+            await server.serve()
+
+        server_task = asyncio.create_task(run_server())
+
+        # Wait for either task to complete or signal to be received
+        done, pending = await asyncio.wait(
+            [orchestrator_task, server_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        # Cancel remaining tasks
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    except KeyboardInterrupt:
+        logger.info("Received Ctrl+C, shutting down...")
     finally:
+        await orchestrator.stop()
         await db.close()
         logger.info("NanoGridBot stopped")
 

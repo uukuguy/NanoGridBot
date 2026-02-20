@@ -1,14 +1,15 @@
 """Database connection management."""
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import aiosqlite
 from loguru import logger
 
-from nanogridbot.database.groups import GroupRepository
-from nanogridbot.database.messages import MessageRepository
+from nanogridbot.database.groups import GroupRepository, RegisteredGroup
+from nanogridbot.database.messages import Message, MessageRepository
 from nanogridbot.database.tasks import TaskRepository
 from nanogridbot.database.user_channel_configs import UserChannelConfigRepository
 from nanogridbot.database.users import (
@@ -251,6 +252,15 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_user_channel_user ON user_channel_configs(user_id)
         """)
 
+        # App state table for router state
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         await db.commit()
 
     async def execute(
@@ -321,6 +331,27 @@ class Database:
         """
         return GroupRepository(self)
 
+    # Delegation methods for orchestrator compatibility
+    async def get_groups(self) -> Sequence[RegisteredGroup]:
+        """Get all groups. Delegates to GroupRepository."""
+        return await self.get_group_repository().get_groups()
+
+    async def get_registered_groups(self) -> Sequence[RegisteredGroup]:
+        """Get all registered groups. Alias for get_groups()."""
+        return await self.get_groups()
+
+    async def save_group(self, group: RegisteredGroup) -> None:
+        """Save a group. Delegates to GroupRepository."""
+        return await self.get_group_repository().save_group(group)
+
+    async def delete_group(self, jid: str) -> bool:
+        """Delete a group. Delegates to GroupRepository."""
+        return await self.get_group_repository().delete_group(jid)
+
+    async def get_new_messages(self, since: datetime | None) -> Sequence[Message]:
+        """Get new messages since timestamp. Delegates to MessageRepository."""
+        return await self.get_message_repository().get_new_messages(since)
+
     def get_message_repository(self) -> MessageRepository:
         """Get message repository instance.
 
@@ -384,3 +415,85 @@ class Database:
             UserChannelConfigRepository instance.
         """
         return UserChannelConfigRepository(self)
+
+    async def get_router_state(self) -> dict[str, Any]:
+        """Get router state from database.
+
+        Returns:
+            Dictionary containing router state.
+        """
+        db = await self.get_connection()
+        cursor = await db.execute(
+            "SELECT key, value FROM app_state WHERE key IN ('last_timestamp', 'sessions', 'last_agent_timestamp')"
+        )
+        rows = await cursor.fetchall()
+        state = {}
+        for row in rows:
+            import json
+
+            try:
+                state[row[0]] = json.loads(row[1])
+            except (json.JSONDecodeError, TypeError):
+                state[row[0]] = row[1]
+        return state
+
+    async def save_router_state(self, state: dict[str, Any]) -> None:
+        """Save router state to database.
+
+        Args:
+            state: Dictionary containing router state.
+        """
+        db = await self.get_connection()
+        import json
+
+        for key, value in state.items():
+            value_json = json.dumps(value)
+            await db.execute(
+                """
+                INSERT INTO app_state (key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value_json),
+            )
+        await db.commit()
+
+
+# Global metrics database instance for metrics.py
+_metrics_db: Database | None = None
+
+
+class MetricsConnection:
+    """Async context manager for metrics database connection."""
+
+    def __init__(self) -> None:
+        self._conn: aiosqlite.Connection | None = None
+
+    async def __aenter__(self) -> aiosqlite.Connection:
+        global _metrics_db
+
+        if _metrics_db is None:
+            from nanogridbot.config import Config
+
+            config = Config()
+            # Use a separate metrics database
+            metrics_db_path = config.store_dir / "metrics.db"
+            _metrics_db = Database(metrics_db_path)
+
+        self._conn = await _metrics_db.get_connection()
+        return self._conn
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        # Don't close the connection, just let it be reused
+        pass
+
+
+async def get_db_connection() -> MetricsConnection:
+    """Get a database connection for metrics.
+
+    This is a compatibility function for metrics.py that needs
+    a standalone database connection.
+
+    Returns:
+        MetricsConnection context manager.
+    """
+    return MetricsConnection()
