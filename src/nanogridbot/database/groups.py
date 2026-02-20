@@ -34,13 +34,14 @@ class GroupRepository:
         await self._db.execute(
             """
             INSERT OR REPLACE INTO groups
-            (jid, name, folder, trigger_pattern, container_config, requires_trigger)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (jid, name, folder, user_id, trigger_pattern, container_config, requires_trigger)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 group.jid,
                 group.name,
                 group.folder,
+                group.user_id,
                 group.trigger_pattern,
                 container_config,
                 int(group.requires_trigger),
@@ -59,7 +60,7 @@ class GroupRepository:
         """
         row = await self._db.fetchone(
             """
-            SELECT jid, name, folder, trigger_pattern, container_config, requires_trigger
+            SELECT jid, name, folder, user_id, trigger_pattern, container_config, requires_trigger
             FROM groups
             WHERE jid = ?
             """,
@@ -75,7 +76,7 @@ class GroupRepository:
         """
         rows = await self._db.fetchall(
             """
-            SELECT jid, name, folder, trigger_pattern, container_config, requires_trigger
+            SELECT jid, name, folder, user_id, trigger_pattern, container_config, requires_trigger
             FROM groups
             ORDER BY name ASC
             """,
@@ -93,12 +94,32 @@ class GroupRepository:
         """
         rows = await self._db.fetchall(
             """
-            SELECT jid, name, folder, trigger_pattern, container_config, requires_trigger
+            SELECT jid, name, folder, user_id, trigger_pattern, container_config, requires_trigger
             FROM groups
             WHERE folder = ?
             ORDER BY name ASC
             """,
             (folder,),
+        )
+        return [self._row_to_group(row) for row in rows]
+
+    async def get_groups_by_user(self, user_id: int) -> Sequence[RegisteredGroup]:
+        """Get groups by user ID.
+
+        Args:
+            user_id: User ID to filter by.
+
+        Returns:
+            List of groups owned by the user.
+        """
+        rows = await self._db.fetchall(
+            """
+            SELECT jid, name, folder, user_id, trigger_pattern, container_config, requires_trigger
+            FROM groups
+            WHERE user_id = ?
+            ORDER BY name ASC
+            """,
+            (user_id,),
         )
         return [self._row_to_group(row) for row in rows]
 
@@ -155,6 +176,7 @@ class GroupRepository:
             jid=str(row["jid"]),
             name=str(row["name"]),
             folder=str(row["folder"]),
+            user_id=row["user_id"] if row.get("user_id") else None,
             trigger_pattern=row["trigger_pattern"] if row["trigger_pattern"] else None,
             container_config=container_config,
             requires_trigger=bool(row["requires_trigger"]),

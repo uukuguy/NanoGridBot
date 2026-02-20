@@ -2,9 +2,44 @@
 
 ## Current Status
 
-**Phase**: Phase 7-8 完成
+**Phase**: Phase 9 完成
 **Date**: 2026-02-20
-**Project Status**: 记忆系统 + 任务日志增强 COMPLETED ✅
+**Project Status**: Per-user IM 配置 COMPLETED ✅
+
+---
+
+## 2026-02-20 - Per-user IM 配置完成 (Phase 9)
+
+### 本次完成的工作
+
+#### Phase 9: Per-user IM 配置 ✅
+
+| 功能 | 文件 |
+|------|------|
+| 用户ID关联群组 | database/groups.py, database/connection.py, types.py |
+| 用户Channel配置模型 | types.py (UserChannelConfig, UserChannelConfigUpdate) |
+| Channel配置数据库存储 | database/user_channel_configs.py |
+| Channel配置API | web/app.py |
+
+**新增数据库表:**
+- `groups` 表添加 `user_id` 字段
+- `user_channel_configs` 表 (存储用户channel配置)
+
+**新增 API:**
+- `GET /api/user/channels` - 列出用户所有channel配置
+- `GET /api/user/channels/{channel}` - 获取指定channel配置
+- `POST /api/user/channels` - 创建/更新channel配置
+- `DELETE /api/user/channels/{channel}` - 删除channel配置
+- `PUT /api/user/channels/{channel}/active` - 设置channel启用状态
+- `GET /api/user/groups` - 获取用户自己的群组
+
+**功能特性:**
+- 群组与用户关联，支持多用户隔离
+- 每个用户可以配置自己的IM凭据（Telegram、Slack、Discord等）
+- Channel配置存储在数据库中
+- 支持channel启用/禁用
+
+**测试结果**: 75 passed ✅
 
 ---
 
@@ -161,7 +196,7 @@ git commit -m "feat: add multi-user system (Phase 1-5)"
 | 6 | 挂载安全增强（非主只读+符号链接检测） | ✅ 完成 |
 | 7 | 记忆系统（对话归档+日期记忆+笔记） | ✅ 完成 |
 | 8 | 任务日志增强 | ✅ 完成 |
-| 9 | Per-user IM 配置 | 待开始 |
+| 9 | Per-user IM 配置 | ✅ 完成 |
 | 10 | HappyClaw React 19 前端整合 | 待开始 |
 
 ---

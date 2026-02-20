@@ -10,6 +10,7 @@ from loguru import logger
 from nanogridbot.database.groups import GroupRepository
 from nanogridbot.database.messages import MessageRepository
 from nanogridbot.database.tasks import TaskRepository
+from nanogridbot.database.user_channel_configs import UserChannelConfigRepository
 from nanogridbot.database.users import (
     AuditRepository,
     InviteCodeRepository,
@@ -90,10 +91,17 @@ class Database:
                 jid TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 folder TEXT NOT NULL,
+                user_id INTEGER,
                 trigger_pattern TEXT,
                 container_config TEXT,
-                requires_trigger INTEGER DEFAULT 1
+                requires_trigger INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
             )
+        """)
+
+        # Groups index
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_groups_user ON groups(user_id)
         """)
 
         # Tasks table
@@ -208,6 +216,39 @@ class Database:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
+        """)
+
+        # User channel configs table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_channel_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                channel TEXT NOT NULL,
+                telegram_bot_token TEXT,
+                slack_bot_token TEXT,
+                slack_signing_secret TEXT,
+                discord_bot_token TEXT,
+                whatsapp_session_path TEXT,
+                qq_host TEXT,
+                qq_port INTEGER,
+                feishu_app_id TEXT,
+                feishu_app_secret TEXT,
+                wecom_corp_id TEXT,
+                wecom_agent_id TEXT,
+                wecom_secret TEXT,
+                dingtalk_app_key TEXT,
+                dingtalk_app_secret TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, channel)
+            )
+        """)
+
+        # User channel configs indexes
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_channel_user ON user_channel_configs(user_id)
         """)
 
         await db.commit()
@@ -335,3 +376,11 @@ class Database:
             AuditRepository instance.
         """
         return AuditRepository(self)
+
+    def get_user_channel_config_repository(self) -> UserChannelConfigRepository:
+        """Get user channel config repository instance.
+
+        Returns:
+            UserChannelConfigRepository instance.
+        """
+        return UserChannelConfigRepository(self)

@@ -50,6 +50,7 @@ class RegisteredGroup(BaseModel):
     jid: str
     name: str
     folder: str
+    user_id: int | None = None
     trigger_pattern: str | None = None
     container_config: dict[str, Any] | None = None
     requires_trigger: bool = True
@@ -353,3 +354,71 @@ class AuditEvent(BaseModel):
     resource_id: str | None = None
     details: dict[str, Any] | None = None
     timestamp: datetime | None = None
+
+
+# ============================================
+# Per-User Channel Configuration
+# ============================================
+
+
+class UserChannelConfig(BaseModel):
+    """Per-user channel configuration for IM platforms."""
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    user_id: int
+    channel: ChannelType
+    # Telegram
+    telegram_bot_token: str | None = None
+    # Slack
+    slack_bot_token: str | None = None
+    slack_signing_secret: str | None = None
+    # Discord
+    discord_bot_token: str | None = None
+    # WhatsApp
+    whatsapp_session_path: str | None = None
+    # QQ
+    qq_host: str | None = None
+    qq_port: int | None = None
+    # Feishu
+    feishu_app_id: str | None = None
+    feishu_app_secret: str | None = None
+    # WeCom
+    wecom_corp_id: str | None = None
+    wecom_agent_id: str | None = None
+    wecom_secret: str | None = None
+    # DingTalk
+    dingtalk_app_key: str | None = None
+    dingtalk_app_secret: str | None = None
+    # Status
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class UserChannelConfigUpdate(BaseModel):
+    """Request model for updating user channel config."""
+
+    channel: ChannelType
+    # Telegram
+    telegram_bot_token: str | None = None
+    # Slack
+    slack_bot_token: str | None = None
+    slack_signing_secret: str | None = None
+    # Discord
+    discord_bot_token: str | None = None
+    # WhatsApp
+    whatsapp_session_path: str | None = None
+    # QQ
+    qq_host: str | None = None
+    qq_port: int | None = None
+    # Feishu
+    feishu_app_id: str | None = None
+    feishu_app_secret: str | None = None
+    # WeCom
+    wecom_corp_id: str | None = None
+    wecom_agent_id: str | None = None
+    wecom_secret: str | None = None
+    # DingTalk
+    dingtalk_app_key: str | None = None
+    dingtalk_app_secret: str | None = None

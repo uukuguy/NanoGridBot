@@ -28,9 +28,12 @@ from nanogridbot.auth.exceptions import (
 )
 from nanogridbot.types import (
     AuditEventType,
+    ChannelType,
     InviteCodeCreate,
     Permission,
     User,
+    UserChannelConfig,
+    UserChannelConfigUpdate,
     UserCreate,
     UserLogin,
     UserResponse,
@@ -498,6 +501,48 @@ async def get_groups():
             "requires_trigger": group.requires_trigger,
         }
         for jid, group in registered_groups.items()
+    ]
+
+
+@app.get(
+    "/api/user/groups",
+    response_model=list[GroupResponse],
+    tags=["user"],
+    summary="List user's groups",
+    description="Returns groups owned by the current user.",
+)
+async def get_user_groups(
+    user: User = Depends(get_current_user),
+):
+    """Get list of groups owned by the current user."""
+    if not web_state.db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    group_repo = web_state.db.get_group_repository()
+    user_groups = await group_repo.get_groups_by_user(user.id)
+
+    # Get queue states from orchestrator
+    queue_states = (
+        web_state.orchestrator.queue.states if hasattr(web_state.orchestrator, "queue") else {}
+    )
+
+    return [
+        {
+            "jid": group.jid,
+            "name": group.name,
+            "folder": group.folder,
+            "active": (
+                queue_states.get(group.jid, {}).get("active", False)
+                if isinstance(queue_states.get(group.jid), dict)
+                else False
+            ),
+            "trigger_pattern": group.trigger_pattern,
+            "requires_trigger": group.requires_trigger,
+        }
+        for group in user_groups
     ]
 
 
@@ -1102,6 +1147,243 @@ async def list_invites(
 
     invite_mgr = InviteCodeManager(db)
     return await invite_mgr.list_codes(created_by=user.id)
+
+
+# ============================================================================
+# User Channel Config API
+# ============================================================================
+
+
+class UserChannelConfigResponse(BaseModel):
+    """Response model for user channel config."""
+
+    user_id: int
+    channel: str
+    is_active: bool
+    created_at: str | None
+    updated_at: str | None
+
+
+@app.get(
+    "/api/user/channels",
+    response_model=list[UserChannelConfigResponse],
+    tags=["user"],
+    summary="List user channel configs",
+    description="List all channel configurations for the current user.",
+)
+async def list_user_channels(
+    user: User = Depends(get_current_user),
+):
+    """List all channel configurations for the current user."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    config_repo = db.get_user_channel_config_repository()
+    configs = await config_repo.get_configs_by_user(user.id)
+
+    return [
+        UserChannelConfigResponse(
+            user_id=c.user_id,
+            channel=c.channel.value if isinstance(c.channel, ChannelType) else c.channel,
+            is_active=c.is_active,
+            created_at=c.created_at.isoformat() if c.created_at else None,
+            updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        )
+        for c in configs
+    ]
+
+
+@app.get(
+    "/api/user/channels/{channel}",
+    response_model=UserChannelConfigResponse,
+    tags=["user"],
+    summary="Get user channel config",
+    description="Get channel configuration for a specific channel.",
+)
+async def get_user_channel(
+    channel: ChannelType,
+    user: User = Depends(get_current_user),
+):
+    """Get channel configuration for a specific channel."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    config_repo = db.get_user_channel_config_repository()
+    config = await config_repo.get_config(user.id, channel)
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Channel configuration for {channel.value} not found",
+        )
+
+    return UserChannelConfigResponse(
+        user_id=config.user_id,
+        channel=config.channel.value if isinstance(config.channel, ChannelType) else config.channel,
+        is_active=config.is_active,
+        created_at=config.created_at.isoformat() if config.created_at else None,
+        updated_at=config.updated_at.isoformat() if config.updated_at else None,
+    )
+
+
+@app.post(
+    "/api/user/channels",
+    response_model=UserChannelConfigResponse,
+    tags=["user"],
+    summary="Create or update user channel config",
+    description="Create or update channel configuration for the current user.",
+)
+async def save_user_channel(
+    config_data: UserChannelConfigUpdate,
+    user: User = Depends(get_current_user),
+):
+    """Create or update channel configuration."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    config_repo = db.get_user_channel_config_repository()
+
+    # Check if config exists
+    existing = await config_repo.get_config(user.id, config_data.channel)
+
+    now = datetime.utcnow()
+    config = UserChannelConfig(
+        user_id=user.id,
+        channel=config_data.channel,
+        telegram_bot_token=config_data.telegram_bot_token,
+        slack_bot_token=config_data.slack_bot_token,
+        slack_signing_secret=config_data.slack_signing_secret,
+        discord_bot_token=config_data.discord_bot_token,
+        whatsapp_session_path=config_data.whatsapp_session_path,
+        qq_host=config_data.qq_host,
+        qq_port=config_data.qq_port,
+        feishu_app_id=config_data.feishu_app_id,
+        feishu_app_secret=config_data.feishu_app_secret,
+        wecom_corp_id=config_data.wecom_corp_id,
+        wecom_agent_id=config_data.wecom_agent_id,
+        wecom_secret=config_data.wecom_secret,
+        dingtalk_app_key=config_data.dingtalk_app_key,
+        dingtalk_app_secret=config_data.dingtalk_app_secret,
+        is_active=True,
+        created_at=existing.created_at if existing else now,
+        updated_at=now,
+    )
+
+    await config_repo.save_config(config)
+
+    # Log audit event
+    audit_repo = db.get_audit_repository()
+    await audit_repo.log_event(
+        event_type=AuditEventType.USER_UPDATED,
+        user_id=user.id,
+        username=user.username,
+        resource_type="user_channel_config",
+        resource_id=config_data.channel.value if isinstance(config_data.channel, ChannelType) else config_data.channel,
+    )
+
+    return UserChannelConfigResponse(
+        user_id=config.user_id,
+        channel=config.channel.value if isinstance(config.channel, ChannelType) else config.channel,
+        is_active=config.is_active,
+        created_at=config.created_at.isoformat() if config.created_at else None,
+        updated_at=config.updated_at.isoformat() if config.updated_at else None,
+    )
+
+
+@app.delete(
+    "/api/user/channels/{channel}",
+    tags=["user"],
+    summary="Delete user channel config",
+    description="Delete channel configuration for the current user.",
+)
+async def delete_user_channel(
+    channel: ChannelType,
+    user: User = Depends(get_current_user),
+):
+    """Delete channel configuration."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    config_repo = db.get_user_channel_config_repository()
+    deleted = await config_repo.delete_config(user.id, channel)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Channel configuration for {channel.value} not found",
+        )
+
+    # Log audit event
+    audit_repo = db.get_audit_repository()
+    await audit_repo.log_event(
+        event_type=AuditEventType.USER_UPDATED,
+        user_id=user.id,
+        username=user.username,
+        resource_type="user_channel_config",
+        resource_id=channel.value,
+        details={"action": "deleted"},
+    )
+
+    return {"message": f"Channel configuration for {channel.value} deleted"}
+
+
+@app.put(
+    "/api/user/channels/{channel}/active",
+    response_model=UserChannelConfigResponse,
+    tags=["user"],
+    summary="Set channel active status",
+    description="Enable or disable a channel configuration.",
+)
+async def set_channel_active(
+    channel: ChannelType,
+    is_active: bool,
+    user: User = Depends(get_current_user),
+):
+    """Set channel configuration active status."""
+    db = web_state.db
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    config_repo = db.get_user_channel_config_repository()
+    config = await config_repo.get_config(user.id, channel)
+
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Channel configuration for {channel.value} not found",
+        )
+
+    await config_repo.set_active(user.id, channel, is_active)
+
+    # Get updated config
+    updated = await config_repo.get_config(user.id, channel)
+
+    return UserChannelConfigResponse(
+        user_id=updated.user_id,
+        channel=updated.channel.value if isinstance(updated.channel, ChannelType) else updated.channel,
+        is_active=updated.is_active,
+        created_at=updated.created_at.isoformat() if updated.created_at else None,
+        updated_at=updated.updated_at.isoformat() if updated.updated_at else None,
+    )
 
 
 # Initialize session_mgr at module level for logout
