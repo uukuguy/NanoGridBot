@@ -127,16 +127,12 @@ pub struct App {
     pub workspace: String,
     /// Chat messages
     pub messages: Vec<Message>,
-    /// Current input text (kept for backward compatibility)
-    pub input: String,
     /// TextArea widget for input handling
     textarea: TextArea<'static>,
     /// Scroll offset for chat area
     pub scroll: u16,
     /// List state for chat scrolling
     pub chat_state: ListState,
-    /// Input cursor position
-    pub cursor_position: usize,
     /// Input mode (single line or multiline)
     pub input_mode: InputMode,
     /// Transport for communicating with Claude Code (used for sending messages)
@@ -261,11 +257,9 @@ impl App {
             quit: false,
             workspace: config.workspace,
             messages: Vec::new(),
-            input: String::new(),
             textarea,
             scroll: 0,
             chat_state,
-            cursor_position: 0,
             input_mode: InputMode::SingleLine,
             transport: None,
             thinking_text: String::new(),
@@ -535,30 +529,25 @@ impl App {
 
     /// Build evaluation context for keymap condition checking
     fn build_eval_context(&self) -> EvalContext {
+        let input_text = self.textarea.lines().join("\n");
+        let cursor_col = self.textarea.cursor().1;
         EvalContext {
-            cursor_position: self.cursor_position,
-            input_width: unicode_width::UnicodeWidthStr::width(self.input.as_str()),
-            input_byte_len: self.input.len(),
+            cursor_position: cursor_col,
+            input_width: unicode_width::UnicodeWidthStr::width(input_text.as_str()),
+            input_byte_len: input_text.len(),
             selected_index: self.chat_state.selected().unwrap_or(0),
             results_len: self.search_results.len(),
-            original_input_empty: self.input.is_empty(),
+            original_input_empty: input_text.is_empty(),
             in_search_mode: self.app_mode == AppMode::Search,
         }
     }
 
-    /// Sync input field from textarea (for backward compatibility)
-    fn sync_input_from_textarea(&mut self) {
-        self.input = self.textarea.lines().join("\n");
-        self.cursor_position = self.textarea.cursor().1;
-    }
-
-    /// Set textarea content and sync input field
+    /// Set textarea content
     fn set_textarea_content(&mut self, content: &str) {
         let lines: Vec<String> = content.lines().map(String::from).collect();
         let lines = if lines.is_empty() { vec![String::new()] } else { lines };
         self.textarea = TextArea::from(lines);
         self.apply_textarea_config();
-        self.sync_input_from_textarea();
     }
 
     /// Apply standard configuration to textarea
@@ -788,7 +777,7 @@ impl App {
         // Input area: min 1 row, max 10 rows for content
         // Use actual area width - the Paragraph widget wraps at full width
         let input_text_width = area.width as usize;
-        let input_text = &self.input;
+        let input_text = self.textarea.lines().join("\n");
 
         // Count lines: explicit newlines + wrap-based lines
         let explicit_newlines = input_text.chars().filter(|&c| c == '\n').count() as u16;
@@ -1144,8 +1133,8 @@ impl App {
         let overlay_area = Rect::new(
             overlay_x,
             overlay_y,
-            overlay_x + overlay_width,
-            overlay_y + overlay_height,
+            overlay_width,
+            overlay_height,
         );
 
         // Draw semi-transparent background
@@ -1158,8 +1147,8 @@ impl App {
         let box_area = Rect::new(
             overlay_area.x + 1,
             overlay_area.y + 1,
-            overlay_area.x + overlay_width - 1,
-            overlay_area.y + overlay_height - 1,
+            overlay_width.saturating_sub(2),
+            overlay_height.saturating_sub(2),
         );
 
         let search_block = Block::default()
@@ -1168,12 +1157,13 @@ impl App {
             .border_style(Style::default().fg(self.theme.accent));
         f.render_widget(search_block, box_area);
 
-        // Draw search input
+        // Draw search input (inside box, 2 rows for input)
+        let inner_width = box_area.width.saturating_sub(2);
         let input_area = Rect::new(
             box_area.x + 1,
             box_area.y + 1,
-            box_area.right().saturating_sub(1),
-            box_area.y + 3,
+            inner_width,
+            2,
         );
 
         let input_text = format!("> {}", self.search_query);
@@ -1181,12 +1171,14 @@ impl App {
             .style(Style::default().fg(self.theme.input));
         f.render_widget(input_para, input_area);
 
-        // Draw results list
+        // Draw results list (below input, above hint)
+        let results_y = box_area.y + 3;
+        let results_height = box_area.height.saturating_sub(5); // 1 border + 2 input + 1 hint + 1 border
         let results_area = Rect::new(
             box_area.x + 1,
-            box_area.y + 3,
-            box_area.right().saturating_sub(1),
-            box_area.bottom().saturating_sub(1),
+            results_y,
+            inner_width,
+            results_height,
         );
 
         if self.search_results.is_empty() {
@@ -1213,12 +1205,12 @@ impl App {
             f.render_widget(results_list, results_area);
         }
 
-        // Draw hint at bottom
+        // Draw hint at bottom of box
         let hint_area = Rect::new(
             box_area.x + 1,
-            box_area.bottom().saturating_sub(1),
-            box_area.right().saturating_sub(1),
-            box_area.bottom(),
+            box_area.bottom().saturating_sub(2),
+            inner_width,
+            1,
         );
         let hint = Paragraph::new("↑↓ select | Enter use | Esc cancel")
             .style(Style::default().fg(self.theme.status).dim());
@@ -1389,7 +1381,6 @@ impl App {
         // tui-textarea handles: character input, Ctrl+A/E/B/F/K/D/H/W, arrows,
         // Home/End, Backspace, Delete, word movement, undo/redo, etc.
         self.textarea.input(key);
-        self.sync_input_from_textarea();
 
         // Reset history navigation when user types
         if matches!(key.code, KeyCode::Char(_)) {
