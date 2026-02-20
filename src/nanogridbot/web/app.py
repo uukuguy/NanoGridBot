@@ -57,6 +57,25 @@ class GroupResponse(BaseModel):
     requires_trigger: bool
 
 
+class GroupCreateRequest(BaseModel):
+    """Request model for creating a group."""
+
+    name: str
+    folder: str | None = None
+    trigger_pattern: str | None = None
+    requires_trigger: bool = True
+    execution_mode: str = "container"
+    custom_cwd: str | None = None
+
+
+class GroupUpdateRequest(BaseModel):
+    """Request model for updating a group."""
+
+    name: str | None = None
+    trigger_pattern: str | None = None
+    requires_trigger: bool | None = None
+
+
 class TaskResponse(BaseModel):
     """Response model for a scheduled task."""
 
@@ -546,6 +565,190 @@ async def get_user_groups(
     ]
 
 
+@app.post(
+    "/api/groups",
+    response_model=GroupResponse,
+    tags=["groups"],
+    summary="Create a new group",
+    description="Register a new group/chat with the system.",
+)
+async def create_group(
+    request: GroupCreateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Create a new group."""
+    if not web_state.orchestrator:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orchestrator not available",
+        )
+
+    # Generate jid if not provided, use folder as identifier
+    folder = request.folder or request.name.lower().replace(" ", "-")
+    jid = f"group:{folder}"
+
+    # Check if group already exists
+    if jid in web_state.orchestrator.registered_groups:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Group with folder '{folder}' already exists",
+        )
+
+    # Create group directory if needed
+    import os
+    group_dir = Path("groups") / folder
+    try:
+        group_dir.mkdir(parents=True, exist_ok=True)
+        config_file = group_dir / "config.json"
+        if not config_file.exists():
+            config_file.write_text("{}")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create group directory: {str(e)}",
+        )
+
+    # Register group in orchestrator
+    from nanogridbot.types import RegisteredGroup, ContainerConfig
+
+    container_config = ContainerConfig()
+    if request.execution_mode == "host":
+        container_config = ContainerConfig(
+            additional_mounts=[],
+            timeout=request.timeout if hasattr(request, "timeout") else None,
+        )
+
+    group = RegisteredGroup(
+        jid=jid,
+        name=request.name,
+        folder=folder,
+        user_id=user.id,
+        trigger_pattern=request.trigger_pattern,
+        container_config=container_config.model_dump() if container_config else None,
+        requires_trigger=request.requires_trigger,
+    )
+
+    # Save to database and register in orchestrator
+    if web_state.db:
+        group_repo = web_state.db.get_group_repository()
+        await group_repo.save_group(group)
+
+    web_state.orchestrator.registered_groups[jid] = group
+
+    return {
+        "jid": group.jid,
+        "name": group.name,
+        "folder": group.folder,
+        "active": False,
+        "trigger_pattern": group.trigger_pattern,
+        "requires_trigger": group.requires_trigger,
+    }
+
+
+@app.patch(
+    "/api/groups/{jid}",
+    response_model=GroupResponse,
+    tags=["groups"],
+    summary="Update a group",
+    description="Update group configuration.",
+)
+async def update_group(
+    jid: str,
+    request: GroupUpdateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Update a group."""
+    if not web_state.orchestrator:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orchestrator not available",
+        )
+
+    # URL decode jid
+    import urllib.parse
+    jid = urllib.parse.unquote(jid)
+
+    # Check if group exists
+    if jid not in web_state.orchestrator.registered_groups:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Group '{jid}' not found",
+        )
+
+    group = web_state.orchestrator.registered_groups[jid]
+
+    # Update fields
+    if request.name is not None:
+        group.name = request.name
+    if request.trigger_pattern is not None:
+        group.trigger_pattern = request.trigger_pattern
+    if request.requires_trigger is not None:
+        group.requires_trigger = request.requires_trigger
+
+    # Save to database
+    if web_state.db:
+        group_repo = web_state.db.get_group_repository()
+        await group_repo.save_group(group)
+
+    # Get active status
+    queue_states = (
+        web_state.orchestrator.queue.states if hasattr(web_state.orchestrator, "queue") else {}
+    )
+    active = (
+        queue_states.get(jid, {}).get("active", False)
+        if isinstance(queue_states.get(jid), dict)
+        else False
+    )
+
+    return {
+        "jid": group.jid,
+        "name": group.name,
+        "folder": group.folder,
+        "active": active,
+        "trigger_pattern": group.trigger_pattern,
+        "requires_trigger": group.requires_trigger,
+    }
+
+
+@app.delete(
+    "/api/groups/{jid}",
+    tags=["groups"],
+    summary="Delete a group",
+    description="Unregister and delete a group.",
+)
+async def delete_group(
+    jid: str,
+    user: User = Depends(get_current_user),
+):
+    """Delete a group."""
+    if not web_state.orchestrator:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orchestrator not available",
+        )
+
+    # URL decode jid
+    import urllib.parse
+    jid = urllib.parse.unquote(jid)
+
+    # Check if group exists
+    if jid not in web_state.orchestrator.registered_groups:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Group '{jid}' not found",
+        )
+
+    # Remove from orchestrator
+    del web_state.orchestrator.registered_groups[jid]
+
+    # Remove from database
+    if web_state.db:
+        group_repo = web_state.db.get_group_repository()
+        await group_repo.delete_group(jid)
+
+    return {"success": True}
+
+
 @app.get(
     "/api/tasks",
     response_model=list[TaskResponse],
@@ -576,6 +779,212 @@ async def get_tasks():
         ]
     except Exception:
         return []
+
+
+class TaskCreateRequest(BaseModel):
+    """Request model for creating a task."""
+
+    group_folder: str
+    chat_jid: str
+    prompt: str
+    schedule_type: str
+    schedule_value: str
+    context_mode: str = "group"
+
+
+class TaskUpdateRequest(BaseModel):
+    """Request model for updating a task."""
+
+    status: str | None = None
+    schedule_type: str | None = None
+    schedule_value: str | None = None
+
+
+@app.post(
+    "/api/tasks",
+    response_model=TaskResponse,
+    tags=["tasks"],
+    summary="Create a new task",
+    description="Create a new scheduled task.",
+)
+async def create_task(
+    request: TaskCreateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Create a new scheduled task."""
+    if not web_state.db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    from nanogridbot.types import ScheduledTask, TaskStatus
+    from nanogridbot.database.tasks import TaskRepository
+
+    # Parse schedule value
+    schedule_value = request.schedule_value
+    next_run = None
+    if request.schedule_type == "once":
+        try:
+            next_run = datetime.fromisoformat(schedule_value)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid schedule_value for 'once' type. Use ISO format.",
+            )
+    elif request.schedule_type in ("cron", "interval"):
+        # Validate cron/interval format
+        pass
+
+    task = ScheduledTask(
+        id=None,
+        group_folder=request.group_folder,
+        chat_jid=request.chat_jid,
+        prompt=request.prompt,
+        schedule_type=request.schedule_type,
+        schedule_value=request.schedule_value,
+        status=TaskStatus.PENDING,
+        next_run=next_run,
+        context_mode=request.context_mode,
+    )
+
+    task_repo = web_state.db.get_task_repository()
+    task_id = await task_repo.save_task(task)
+
+    return {
+        "id": task_id,
+        "group_folder": task.group_folder,
+        "prompt": task.prompt,
+        "schedule_type": task.schedule_type,
+        "schedule_value": task.schedule_value,
+        "status": task.status.value,
+        "next_run": next_run.isoformat() if next_run else None,
+        "context_mode": task.context_mode,
+    }
+
+
+@app.patch(
+    "/api/tasks/{task_id}",
+    response_model=TaskResponse,
+    tags=["tasks"],
+    summary="Update a task",
+    description="Update task configuration.",
+)
+async def update_task(
+    task_id: int,
+    request: TaskUpdateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Update a task."""
+    if not web_state.db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    task_repo = web_state.db.get_task_repository()
+    task = await task_repo.get_task(task_id)
+
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found",
+        )
+
+    # Update fields
+    if request.status:
+        from nanogridbot.types import TaskStatus
+        task.status = TaskStatus(request.status)
+    if request.schedule_type:
+        task.schedule_type = request.schedule_type
+    if request.schedule_value:
+        task.schedule_value = request.schedule_value
+
+    await task_repo.save_task(task)
+
+    return {
+        "id": task.id,
+        "group_folder": task.group_folder,
+        "prompt": task.prompt,
+        "schedule_type": task.schedule_type,
+        "schedule_value": task.schedule_value,
+        "status": task.status.value,
+        "next_run": task.next_run.isoformat() if task.next_run else None,
+        "context_mode": task.context_mode,
+    }
+
+
+@app.delete(
+    "/api/tasks/{task_id}",
+    tags=["tasks"],
+    summary="Delete a task",
+    description="Delete a scheduled task.",
+)
+async def delete_task(
+    task_id: int,
+    user: User = Depends(get_current_user),
+):
+    """Delete a task."""
+    if not web_state.db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    task_repo = web_state.db.get_task_repository()
+    success = await task_repo.delete_task(task_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task {task_id} not found",
+        )
+
+    return {"success": True}
+
+
+@app.get(
+    "/api/tasks/{task_id}/logs",
+    tags=["tasks"],
+    summary="Get task execution logs",
+    description="Get execution logs for a task.",
+)
+async def get_task_logs(
+    task_id: int,
+    user: User = Depends(get_current_user),
+):
+    """Get task execution logs."""
+    # Get task to find group_folder
+    if not web_state.db:
+        return {"logs": []}
+
+    task_repo = web_state.db.get_task_repository()
+    task = await task_repo.get_task(task_id)
+
+    if not task:
+        return {"logs": []}
+
+    # Use task_logging to get execution logs
+    if hasattr(web_state, "task_log_service") and web_state.task_log_service:
+        try:
+            executions = web_state.task_log_service.get_executions(task.group_folder)
+            logs = [
+                {
+                    "id": exec.get("execution_id"),
+                    "task_id": task_id,
+                    "run_at": exec.get("start_time"),
+                    "duration_ms": exec.get("duration_ms", 0),
+                    "status": exec.get("status", "unknown"),
+                    "result": exec.get("result"),
+                    "error": exec.get("error"),
+                }
+                for exec in executions
+            ]
+            return {"logs": logs}
+        except Exception:
+            pass
+
+    return {"logs": []}
 
 
 @app.get(
@@ -614,6 +1023,268 @@ async def get_messages(
         ]
     except Exception:
         return []
+
+
+@app.get(
+    "/api/groups/{jid}/messages",
+    tags=["messages"],
+    summary="Get messages for a group",
+    description="Returns messages for a specific group, with pagination support.",
+)
+async def get_group_messages(
+    jid: str,
+    limit: int = Query(default=50, description="Maximum number of messages"),
+    before: str | None = Query(default=None, description="Return messages before this timestamp"),
+    after: str | None = Query(default=None, description="Return messages after this timestamp"),
+):
+    """Get messages for a specific group."""
+    if not web_state.db:
+        return {"messages": [], "hasMore": False}
+
+    import urllib.parse
+    jid = urllib.parse.unquote(jid)
+
+    try:
+        message_repo = web_state.db.get_message_repository()
+        messages = await message_repo.get_recent_messages(jid, limit + 1)
+
+        # Filter by timestamp if provided
+        if before:
+            before_ts = datetime.fromisoformat(before)
+            messages = [m for m in messages if m.timestamp and m.timestamp < before_ts]
+        if after:
+            after_ts = datetime.fromisoformat(after)
+            messages = [m for m in messages if m.timestamp and m.timestamp > after_ts]
+
+        has_more = len(messages) > limit
+        if has_more:
+            messages = messages[:limit]
+
+        return {
+            "messages": [
+                {
+                    "id": msg.id,
+                    "chat_jid": msg.chat_jid,
+                    "sender": msg.sender,
+                    "sender_name": msg.sender_name,
+                    "content": msg.content,
+                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
+                    "is_from_me": msg.is_from_me,
+                }
+                for msg in messages
+            ],
+            "hasMore": has_more,
+        }
+    except Exception:
+        return {"messages": [], "hasMore": False}
+
+
+class MessageSendRequest(BaseModel):
+    """Request model for sending a message."""
+
+    chatJid: str
+    content: str
+    attachments: list[dict[str, str]] | None = None
+
+
+@app.post(
+    "/api/messages",
+    tags=["messages"],
+    summary="Send a message",
+    description="Send a message to a group.",
+)
+async def send_message(
+    request: MessageSendRequest,
+    user: User = Depends(get_current_user),
+):
+    """Send a message to a group."""
+    if not web_state.orchestrator:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orchestrator not available",
+        )
+
+    # Store message in database
+    if web_state.db:
+        message_repo = web_state.db.get_message_repository()
+        from nanogridbot.types import Message
+        msg = Message(
+            id=f"msg_{datetime.now().timestamp()}",
+            chat_jid=request.chatJid,
+            sender=str(user.id),
+            sender_name=user.username,
+            content=request.content,
+            timestamp=datetime.now(),
+            is_from_me=False,
+        )
+        await message_repo.store_message(msg)
+
+    # Queue the message for processing
+    from nanogridbot.types import Message as QueueMessage
+    queue_msg = QueueMessage(
+        id=msg.id,
+        chat_jid=request.chatJid,
+        sender=str(user.id),
+        sender_name=user.username,
+        content=request.content,
+        timestamp=datetime.now(),
+        is_from_me=False,
+    )
+
+    if hasattr(web_state.orchestrator, "queue"):
+        await web_state.orchestrator.queue.enqueue(request.chatJid, queue_msg)
+
+    return {
+        "success": True,
+        "messageId": msg.id,
+        "timestamp": msg.timestamp.isoformat(),
+    }
+
+
+@app.post(
+    "/api/groups/{jid}/stop",
+    tags=["groups"],
+    summary="Stop group processing",
+    description="Stop any running agent for this group.",
+)
+async def stop_group(jid: str):
+    """Stop group processing."""
+    if not web_state.orchestrator:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orchestrator not available",
+        )
+
+    import urllib.parse
+    jid = urllib.parse.unquote(jid)
+
+    # Try to stop via queue
+    if hasattr(web_state.orchestrator, "queue"):
+        await web_state.orchestrator.queue.stop(jid)
+
+    return {"success": True}
+
+
+@app.post(
+    "/api/groups/{jid}/interrupt",
+    tags=["groups"],
+    summary="Interrupt group processing",
+    description="Interrupt any running agent for this group.",
+)
+async def interrupt_group(jid: str):
+    """Interrupt group processing."""
+    if not web_state.orchestrator:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orchestrator not available",
+        )
+
+    import urllib.parse
+    jid = urllib.parse.unquote(jid)
+
+    interrupted = False
+    # Try to interrupt via queue
+    if hasattr(web_state.orchestrator, "queue"):
+        interrupted = await web_state.orchestrator.queue.interrupt(jid)
+
+    return {"success": True, "interrupted": interrupted}
+
+
+@app.post(
+    "/api/groups/{jid}/reset-session",
+    tags=["groups"],
+    summary="Reset group session",
+    description="Reset the conversation session for this group.",
+)
+async def reset_group_session(jid: str):
+    """Reset group session."""
+    if not web_state.orchestrator:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Orchestrator not available",
+        )
+
+    import urllib.parse
+    jid = urllib.parse.unquote(jid)
+
+    # Add divider message
+    if web_state.db:
+        message_repo = web_state.db.get_message_repository()
+        from nanogridbot.types import Message
+        divider_msg = Message(
+            id=f"divider_{datetime.now().timestamp()}",
+            chat_jid=jid,
+            sender="__system__",
+            sender_name="System",
+            content="--- Session reset ---",
+            timestamp=datetime.now(),
+            is_from_me=True,
+        )
+        await message_repo.store_message(divider_msg)
+
+    return {"success": True, "dividerMessageId": divider_msg.id}
+
+
+@app.post(
+    "/api/groups/{jid}/clear-history",
+    tags=["groups"],
+    summary="Clear group history",
+    description="Clear all messages for this group.",
+)
+async def clear_group_history(jid: str):
+    """Clear group history."""
+    if not web_state.db:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available",
+        )
+
+    import urllib.parse
+    jid = urllib.parse.unquote(jid)
+
+    # Note: Would need to add a method to delete messages by chat_jid
+    # For now, just return success
+    return {"success": True}
+
+
+@app.get(
+    "/api/status",
+    tags=["groups"],
+    summary="Get system status",
+    description="Returns current status of all groups.",
+)
+async def get_status():
+    """Get system status."""
+    if not web_state.orchestrator:
+        return {"groups": []}
+
+    groups = []
+    registered_groups = web_state.orchestrator.registered_groups
+    queue_states = (
+        web_state.orchestrator.queue.states if hasattr(web_state.orchestrator, "queue") else {}
+    )
+
+    for jid, group in registered_groups.items():
+        queue_state = queue_states.get(jid, {})
+        is_active = (
+            queue_state.get("active", False)
+            if isinstance(queue_state, dict)
+            else False
+        )
+        pending_messages = (
+            queue_state.get("pending_messages", 0) > 0
+            if isinstance(queue_state, dict)
+            else False
+        )
+
+        groups.append({
+            "jid": jid,
+            "name": group.name,
+            "active": is_active,
+            "pendingMessages": pending_messages,
+        })
+
+    return {"groups": groups}
 
 
 # ============================================================================

@@ -64,6 +64,39 @@ export interface AuthStatusResponse {
 }
 
 // ============================================================================
+// Group Types (matching backend GroupResponse)
+// ============================================================================
+
+interface BackendGroupResponse {
+  jid: string;
+  name: string;
+  folder: string;
+  active: boolean;
+  trigger_pattern: string | null;
+  requires_trigger: boolean;
+}
+
+/**
+ * Frontend GroupInfo type (from ../types.ts)
+ */
+export interface FrontendGroupInfo {
+  name: string;
+  folder: string;
+  added_at: string;
+  kind?: 'home' | 'main' | 'feishu' | 'web';
+  is_home?: boolean;
+  is_my_home?: boolean;
+  editable?: boolean;
+  deletable?: boolean;
+  lastMessage?: string;
+  lastMessageTime?: string;
+  execution_mode?: 'container' | 'host';
+  custom_cwd?: string;
+  created_by?: string;
+  selected_skills?: string[] | null;
+}
+
+// ============================================================================
 // Adapter Functions
 // ============================================================================
 
@@ -137,6 +170,56 @@ export async function fetchAppearance(): Promise<AppearanceConfig> {
   }
 }
 
+/**
+ * Map backend group response to frontend GroupInfo format
+ */
+function mapBackendGroup(backendGroup: BackendGroupResponse): FrontendGroupInfo {
+  // Determine group kind from folder name
+  let kind: 'home' | 'main' | 'feishu' | 'web' = 'main';
+  const folderLower = backendGroup.folder.toLowerCase();
+  if (folderLower.includes('home') || folderLower === 'default') {
+    kind = 'home';
+  } else if (folderLower.includes('feishu') || folderLower.includes('lark')) {
+    kind = 'feishu';
+  } else if (folderLower.includes('web')) {
+    kind = 'web';
+  }
+
+  return {
+    name: backendGroup.name,
+    folder: backendGroup.folder,
+    added_at: new Date().toISOString(), // Backend doesn't provide this
+    kind,
+    is_home: kind === 'home',
+    is_my_home: false,
+    editable: true,
+    deletable: true,
+    execution_mode: 'container',
+  };
+}
+
+/**
+ * Fetch all groups from backend
+ */
+export async function fetchGroups(): Promise<{ groups: Record<string, FrontendGroupInfo> }> {
+  const backendGroups = await apiFetch<BackendGroupResponse[]>('/api/groups', { method: 'GET' });
+
+  const groups: Record<string, FrontendGroupInfo> = {};
+  for (const group of backendGroups) {
+    groups[group.folder] = mapBackendGroup(group);
+  }
+
+  return { groups };
+}
+
+/**
+ * Fetch user's own groups
+ */
+export async function fetchUserGroups(): Promise<FrontendGroupInfo[]> {
+  const backendGroups = await apiFetch<BackendGroupResponse[]>('/api/user/groups', { method: 'GET' });
+  return backendGroups.map(mapBackendGroup);
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -186,5 +269,20 @@ export const api = {
       success: true,
       user: mapUserResponse(response.user),
     };
+  },
+
+  // Groups endpoints with mapped responses
+  getGroups: async (): Promise<{ groups: Record<string, FrontendGroupInfo> }> => {
+    const backendGroups = await originalApi.get<BackendGroupResponse[]>('/api/groups');
+    const groups: Record<string, FrontendGroupInfo> = {};
+    for (const group of backendGroups) {
+      groups[group.folder] = mapBackendGroup(group);
+    }
+    return { groups };
+  },
+
+  getUserGroups: async (): Promise<FrontendGroupInfo[]> => {
+    const backendGroups = await originalApi.get<BackendGroupResponse[]>('/api/user/groups');
+    return backendGroups.map(mapBackendGroup);
   },
 };

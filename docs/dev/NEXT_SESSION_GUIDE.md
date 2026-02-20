@@ -23,6 +23,10 @@
    - `GET /api/auth/status` - 检查系统初始化状态
    - `PUT /api/auth/password` - 修改密码
    - `PUT /api/auth/profile` - 更新个人资料
+6. **添加 Groups API 适配器**:
+   - `fetchGroups()` - 获取所有群组
+   - `fetchUserGroups()` - 获取用户群组
+   - 更新 `stores/groups.ts` 使用适配器
 
 **前端功能模块:**
 - Login/Register 页面
@@ -45,6 +49,34 @@
 - react-markdown Markdown渲染
 
 **构建状态**: ✅ 构建成功
+
+**API 对接状态:**
+| 任务 | 后端端点 | 状态 |
+|------|---------|------|
+| Groups CRUD | POST/GET/PATCH/DELETE /api/groups | ✅ 已完成 |
+| Messages | GET /api/groups/{jid}/messages, POST /api/messages | ✅ 已完成 |
+| Group Actions | POST stop/interrupt/reset-session/clear-history | ✅ 已完成 |
+| Status | GET /api/status | ✅ 已完成 |
+| Tasks CRUD | POST/PATCH/DELETE /api/tasks | ✅ 已完成 |
+| 前端适配器 | adapter.ts, stores/groups.ts | ✅ 已完成 |
+
+**本次新增后端 API:**
+- `POST /api/groups` - 创建群组
+- `PATCH /api/groups/{jid}` - 更新群组
+- `DELETE /api/groups/{jid}` - 删除群组
+- `GET /api/groups/{jid}/messages` - 获取群组消息
+- `POST /api/messages` - 发送消息
+- `POST /api/groups/{jid}/stop` - 停止
+- `POST /api/groups/{jid}/interrupt` - 中断
+- `POST /api/groups/{jid}/reset-session` - 重置会话
+- `POST /api/groups/{jid}/clear-history` - 清除历史
+- `GET /api/status` - 获取状态
+- `POST /api/tasks` - 创建任务
+- `PATCH /api/tasks/{id}` - 更新任务
+- `DELETE /api/tasks/{id}` - 删除任务
+- `GET /api/tasks/{id}/logs` - 获取任务日志
+
+**测试结果**: 12 passed (1 pre-existing test failure)
 
 ---
 
@@ -87,27 +119,26 @@
 
 ### 优先级 1: HappyClaw 前端整合继续
 
-**待完成:**
-1. 完成后端 API 对接 (groups, messages, tasks 等)
-2. 测试前端与后端连接
-3. 运行 `npm run dev` 启动前端开发服务器
-4. 访问 http://localhost:5173 测试
+**已完成:**
+1. ✅ 完成后端 API 对接 (groups, messages, tasks 等)
+2. ✅ 前端适配器 (adapter.ts, stores/groups.ts)
+3. ✅ 前端构建成功
 
-**启动命令:**
-```bash
-cd frontend
-npm run dev
-```
+**下一步:**
+1. 启动后端服务: `python -m nanogridbot serve`
+2. 启动前端开发服务器: `cd frontend && npm run dev`
+3. 访问 http://localhost:5173 测试前后端连接
 
-### 优先级 2: Git Push
+### 优先级 2: Git 提交
 
 所有修改准备就绪后推送到远程:
 
 ```bash
-git add frontend/
+git add frontend/src/api/adapter.ts
+git add frontend/src/stores/groups.ts
 git add src/nanogridbot/web/app.py
-git add docs/dev/HAPPYCLOW_FRONTEND_INTEGRATION_ANALYSIS.md
-git commit -m "feat: add HappyClaw React 19 frontend (Phase 10)"
+git add docs/dev/NEXT_SESSION_GUIDE.md
+git commit -m "feat: add frontend API adapters and backend CRUD endpoints (Phase 10)"
 git push origin dev
 ```
 
