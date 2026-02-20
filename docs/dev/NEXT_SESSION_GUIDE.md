@@ -637,3 +637,56 @@ ngb shell test
 - 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
 - 与真实容器集成测试
 - 性能优化（大量消息时的渲染性能）
+
+---
+
+## Phase 27: 输入框自动折行修复
+
+**状态**: ✅ 完成
+**日期**: 2026-02-21
+**测试**: 63 ngb-tui (55 unit + 8 integration), zero clippy warnings
+
+### 问题
+
+1. **中文输入 panic 退出**: tui-textarea 的 `cursor()` 返回字符偏移 (character offset)，但代码当作字节偏移用于 `&line[..cursor_col]` 切片，中文字符 (3字节) 切到中间导致 panic
+2. **折行后光标位置不对**: 用 `Paragraph` + `Wrap{trim:false}` 渲染 (按单词边界折行)，但光标计算按固定宽度硬折行，两者逻辑不一致
+
+### 解决方案
+
+1. **自实现字符级折行** (char-level wrapping):
+   - 去掉 `Paragraph` 的 `Wrap`，改为手动遍历每个字符
+   - 用 `unicode_width::UnicodeWidthChar` 累加字符宽度
+   - 超过可用宽度时手动断行，生成新的 `Line`
+   - 渲染和光标计算使用**同一套折行逻辑**，保证完全一致
+
+2. **正确处理字符偏移**:
+   - 用 `char_indices().enumerate()` 同时追踪字符索引 (匹配光标) 和字节索引 (切分字符串)
+   - 光标位置通过累加已遍历字符的 unicode 宽度得到
+
+3. **高度计算同步修改**:
+   - `draw()` 中的输入框高度计算也改为字符级折行算法
+   - 与 `draw_input()` 使用完全相同的逻辑
+
+### 关键技术点
+
+| 要点 | 说明 |
+|------|------|
+| `tui-textarea cursor()` | 返回 `(row, col)` 其中 col 是字符偏移不是字节偏移 |
+| `tui-textarea` word wrap | 不支持 (issue #5, PR #13 未合并) |
+| `Paragraph Wrap{trim:false}` | 按单词边界折行，不是字符级折行 |
+| `block_inner()` | 新增辅助函数，计算 Block 去掉边框后的内部区域 |
+
+### 修改文件
+
+- `crates/ngb-tui/src/app.rs`:
+  - `draw_input()`: 完全重写，自实现字符级折行 + 光标定位
+  - `draw()`: 高度计算改为字符级折行算法
+  - 新增 `block_inner()` 辅助函数
+
+### 下一步
+
+**可选后续任务**:
+- 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
+- 与真实容器集成测试
+- 性能优化（大量消息时的渲染性能）
+- 输入框滚动支持（超过 max_input_lines 时的内容滚动）

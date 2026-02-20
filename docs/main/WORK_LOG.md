@@ -1,5 +1,40 @@
 # NanoGridBot 项目工作日志
 
+## 2026-02-21 - Phase 27: 输入框自动折行修复
+
+### 工作概述
+
+修复输入框两个关键 bug：中文输入 panic 退出、折行后光标位置不对。根因是 tui-textarea 不支持 word wrap，之前用 Paragraph Wrap 渲染但光标计算逻辑不一致，且错误地将字符偏移当作字节偏移使用。
+
+### 完成的工作
+
+#### 1. 中文输入 crash 修复
+- tui-textarea 的 `cursor()` 返回字符偏移 (character offset)
+- 之前代码用 `&line[..cursor_col]` 进行字节切片，中文字符 (3字节) 切到中间导致 panic
+- 改用 `char_indices().enumerate()` 同时追踪字符索引和字节索引
+
+#### 2. 自实现字符级折行渲染
+- 去掉 `Paragraph` 的 `Wrap{trim:false}` (按单词边界折行)
+- 手动遍历每个字符，用 `UnicodeWidthChar` 累加宽度
+- 超过可用宽度时断行生成新的 `Line`
+- 渲染和光标计算使用同一套逻辑
+
+#### 3. 高度计算同步
+- `draw()` 中输入框高度也改为字符级折行算法
+
+### 修改文件
+
+- `crates/ngb-tui/src/app.rs` — draw_input() 重写, draw() 高度计算重写, 新增 block_inner() 函数
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `cargo test -p ngb-tui` | ✅ 63 测试通过 |
+| `cargo clippy -p ngb-tui -- -D warnings` | ✅ 零警告 |
+
+---
+
 ## 2026-02-20 - Phase 24: 容器启动流程集成
 
 ### 工作概述

@@ -264,6 +264,18 @@ pub enum ToolStatus {
 /// 初始欢迎信息 - 方便后续修改
 /// 初始欢迎信息 - 使用 Line 数组确保缩进正确
 /// 从用户文件读取欢迎信息，如果文件不存在则返回空
+/// Calculate the inner area of a Block with top and bottom borders
+fn block_inner(area: Rect, has_top: bool, has_bottom: bool) -> Rect {
+    let top = if has_top { 1 } else { 0 };
+    let bottom = if has_bottom { 1 } else { 0 };
+    Rect {
+        x: area.x,
+        y: area.y + top,
+        width: area.width,
+        height: area.height.saturating_sub(top + bottom),
+    }
+}
+
 fn welcome_lines_from_file(path: &std::path::Path) -> Vec<Line<'static>> {
     use ratatui::text::Line;
     use ratatui::style::Style;
@@ -857,31 +869,29 @@ impl App {
     fn draw(&mut self, f: &mut Frame) {
         let area = f.area();
 
-        // Calculate dynamic input height based on content
-        // Input area: min 1 row, max 10 rows for content
-        // Use actual area width - the Paragraph widget wraps at full width
-        let input_text_width = area.width as usize;
-        let input_text = self.textarea.lines().join("\n");
+        // Calculate dynamic input height using char-level wrapping (consistent with draw_input)
+        let available_width = area.width as usize;
+        let lines = self.textarea.lines();
 
-        // Count lines: explicit newlines + wrap-based lines
-        let explicit_newlines = input_text.chars().filter(|&c| c == '\n').count() as u16;
-
-        // Calculate wrapped lines for each segment between newlines
-        // Use unicode width for proper visual width calculation
-        let mut wrapped_lines = 0u16;
-        for line in input_text.split('\n') {
-            let line_width = unicode_width::UnicodeWidthStr::width(line);
-            if input_text_width > 0 && line_width > 0 {
-                // Use (line_width - 1) to handle boundary: when content exactly fills a line,
-                // it needs 2 rows (the last char wraps to next line)
-                wrapped_lines += (((line_width.saturating_sub(1)) / input_text_width) + 1) as u16;
-            } else if !line.is_empty() {
-                wrapped_lines += 1;
+        let mut total_lines: u16 = 0;
+        for line in lines {
+            if available_width == 0 || line.is_empty() {
+                total_lines += 1;
+                continue;
             }
+            let mut row_width: usize = 0;
+            let mut rows: u16 = 1;
+            for ch in line.chars() {
+                let ch_width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+                if row_width + ch_width > available_width && row_width > 0 {
+                    rows += 1;
+                    row_width = ch_width;
+                } else {
+                    row_width += ch_width;
+                }
+            }
+            total_lines += rows;
         }
-
-        // Total lines = explicit newlines + wrapped content
-        let total_lines = (explicit_newlines + 1).max(wrapped_lines);
         let min_input_lines = 1;
         let max_input_lines = 10;
         let input_lines = total_lines.clamp(min_input_lines, max_input_lines);
@@ -1196,19 +1206,107 @@ impl App {
 
     fn draw_input(&self, f: &mut Frame, area: Rect) {
         use ratatui::style::Style;
-        use ratatui::widgets::Borders;
+        use ratatui::widgets::{Borders, Paragraph};
+        use unicode_width::UnicodeWidthChar;
 
         let block = ratatui::widgets::Block::new()
             .borders(Borders::TOP | Borders::BOTTOM)
             .border_style(Style::default().fg(self.theme.border));
 
-        // Clone textarea and set block for rendering
-        let mut textarea = self.textarea.clone();
-        textarea.set_block(block);
-        textarea.set_style(Style::default().fg(self.theme.input));
+        let inner = block_inner(area, true, true);
+        let available_width = inner.width as usize;
+        let lines = self.textarea.lines();
+        let is_empty = lines.iter().all(|s| s.is_empty());
 
-        // tui-textarea handles rendering, cursor positioning, and scrolling
-        f.render_widget(&textarea, area);
+        if is_empty {
+            let placeholder = Paragraph::new(Line::from(Span::styled(
+                "Type a message... (Enter to send, Shift+Enter for new line)",
+                Style::default().fg(ratatui::style::Color::DarkGray),
+            )))
+            .block(block);
+            f.render_widget(placeholder, area);
+            if inner.height > 0 {
+                f.set_cursor_position((inner.x, inner.y));
+            }
+            return;
+        }
+
+        // cursor_col from tui-textarea is a CHARACTER offset (not byte offset)
+        let (cursor_row, cursor_char_col) = self.textarea.cursor();
+        let input_style = Style::default().fg(self.theme.input);
+        let mut visual_lines: Vec<Line> = Vec::new();
+        let mut cursor_visual_row: u16 = 0;
+        let mut cursor_visual_col: u16 = 0;
+        let mut found_cursor = false;
+
+        for (line_idx, line_text) in lines.iter().enumerate() {
+            let is_cursor_line = line_idx == cursor_row;
+
+            if available_width == 0 || line_text.is_empty() {
+                visual_lines.push(Line::from(Span::styled(
+                    line_text.to_string(),
+                    input_style,
+                )));
+                if is_cursor_line && !found_cursor {
+                    cursor_visual_row = (visual_lines.len() - 1) as u16;
+                    cursor_visual_col = 0;
+                    found_cursor = true;
+                }
+                continue;
+            }
+
+            // Character-level wrapping: track both byte offsets (for slicing)
+            // and char count (for cursor matching)
+            let mut row_start_byte = 0;
+            let mut row_start_char: usize = 0;
+            let mut row_width: usize = 0;
+
+            for (char_idx, (byte_idx, ch)) in line_text.char_indices().enumerate() {
+                let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+
+                // Check cursor BEFORE potentially wrapping this char
+                if is_cursor_line && !found_cursor && char_idx == cursor_char_col {
+                    cursor_visual_row = visual_lines.len() as u16;
+                    cursor_visual_col = row_width as u16;
+                    found_cursor = true;
+                }
+
+                // If adding this char would exceed width, wrap before it
+                if row_width + ch_width > available_width && row_width > 0 {
+                    visual_lines.push(Line::from(Span::styled(
+                        line_text[row_start_byte..byte_idx].to_string(),
+                        input_style,
+                    )));
+                    row_start_byte = byte_idx;
+                    row_start_char = char_idx;
+                    row_width = ch_width;
+                } else {
+                    row_width += ch_width;
+                }
+            }
+
+            // Push the remaining segment of this line
+            visual_lines.push(Line::from(Span::styled(
+                line_text[row_start_byte..].to_string(),
+                input_style,
+            )));
+
+            // Cursor at end of line (past last char)
+            if is_cursor_line && !found_cursor {
+                cursor_visual_row = (visual_lines.len() - 1) as u16;
+                cursor_visual_col = row_width as u16;
+                found_cursor = true;
+            }
+
+            let _ = row_start_char; // used in logic above
+        }
+
+        let paragraph = Paragraph::new(visual_lines).block(block);
+        f.render_widget(paragraph, area);
+
+        if found_cursor && inner.height > 0 && cursor_visual_row < inner.height {
+            f.set_cursor_position((inner.x + cursor_visual_col, inner.y + cursor_visual_row));
+        }
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
