@@ -123,6 +123,8 @@ impl KeyBinding {
 }
 
 /// Default keybindings for NanoGridBot TUI
+/// Only app-level actions are defined here.
+/// All text editing (cursor, insert, delete) is handled by tui-textarea.
 pub fn default_keybindings() -> Vec<KeyBinding> {
     vec![
         // Ctrl+C: Always triggers Interrupt action
@@ -132,55 +134,11 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
             action: Action::Interrupt,
             condition: None,
         },
-        // Enter: Submit when input is not empty
+        // Enter: Submit when input is not empty (and not in search mode)
         KeyBinding {
             key: (KeyCode::Enter, KeyModifiers::NONE),
             action: Action::Submit,
             condition: Some(ConditionAtom::InputNotEmpty),
-        },
-        // Ctrl+Left/Right: Word movement
-        KeyBinding {
-            key: (KeyCode::Left, KeyModifiers::CONTROL),
-            action: Action::CursorWordLeft,
-            condition: None,
-        },
-        KeyBinding {
-            key: (KeyCode::Right, KeyModifiers::CONTROL),
-            action: Action::CursorWordRight,
-            condition: None,
-        },
-        // Home/End: Line start/end
-        KeyBinding {
-            key: (KeyCode::Home, KeyModifiers::NONE),
-            action: Action::CursorHome,
-            condition: None,
-        },
-        KeyBinding {
-            key: (KeyCode::End, KeyModifiers::NONE),
-            action: Action::CursorEnd,
-            condition: None,
-        },
-        // Arrow keys: Basic movement
-        KeyBinding {
-            key: (KeyCode::Left, KeyModifiers::NONE),
-            action: Action::CursorLeft,
-            condition: None,
-        },
-        KeyBinding {
-            key: (KeyCode::Right, KeyModifiers::NONE),
-            action: Action::CursorRight,
-            condition: None,
-        },
-        // Backspace: delete previous char (unconditional, handle in action)
-        KeyBinding {
-            key: (KeyCode::Backspace, KeyModifiers::NONE),
-            action: Action::Backspace,
-            condition: None,
-        },
-        KeyBinding {
-            key: (KeyCode::Delete, KeyModifiers::NONE),
-            action: Action::Delete,
-            condition: None,
         },
         // Page up/down for scrolling
         KeyBinding {
@@ -192,51 +150,6 @@ pub fn default_keybindings() -> Vec<KeyBinding> {
             key: (KeyCode::PageDown, KeyModifiers::NONE),
             action: Action::PageDown,
             condition: None,
-        },
-        // Ctrl+U: Clear input
-        KeyBinding {
-            key: (KeyCode::Char('u'), KeyModifiers::CONTROL),
-            action: Action::Clear,
-            condition: Some(ConditionAtom::InputNotEmpty),
-        },
-        // Ctrl+K: Delete to end
-        KeyBinding {
-            key: (KeyCode::Char('k'), KeyModifiers::CONTROL),
-            action: Action::DeleteWord,
-            condition: Some(ConditionAtom::InputNotEmpty),
-        },
-        // Emacs-style editing: Ctrl+A (home), Ctrl+E (end), Ctrl+B (back), Ctrl+F (forward)
-        KeyBinding {
-            key: (KeyCode::Char('a'), KeyModifiers::CONTROL),
-            action: Action::CursorHome,
-            condition: None,
-        },
-        KeyBinding {
-            key: (KeyCode::Char('e'), KeyModifiers::CONTROL),
-            action: Action::CursorEnd,
-            condition: None,
-        },
-        KeyBinding {
-            key: (KeyCode::Char('b'), KeyModifiers::CONTROL),
-            action: Action::CursorLeft,
-            condition: None,
-        },
-        KeyBinding {
-            key: (KeyCode::Char('f'), KeyModifiers::CONTROL),
-            action: Action::CursorRight,
-            condition: None,
-        },
-        // Ctrl+D: Delete character at cursor
-        KeyBinding {
-            key: (KeyCode::Char('d'), KeyModifiers::CONTROL),
-            action: Action::Delete,
-            condition: Some(ConditionAtom::InputNotEmpty),
-        },
-        // Ctrl+W: Delete previous word
-        KeyBinding {
-            key: (KeyCode::Char('w'), KeyModifiers::CONTROL),
-            action: Action::DeleteWord,
-            condition: Some(ConditionAtom::InputNotEmpty),
         },
         // Ctrl+R: Open history search (in normal mode)
         KeyBinding {

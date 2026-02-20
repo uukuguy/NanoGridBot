@@ -21,10 +21,11 @@ tokio-tungstenite = "0.24"
 ratatui = "0.29"
 crossterm = "0.28"
 unicode-width = "0.2"
-tui-textarea = "0.3"
+tui-textarea = "0.7"
 
 # Markdown rendering
 pulldown-cmark = "0.12"
+tui-markdown = "0.3"
 
 # Syntax highlighting
 syntect = "5.2"

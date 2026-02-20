@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{List, ListItem, ListState},
     Frame,
 };
+use tui_textarea::TextArea;
 use std::io;
 use std::time::Duration;
 
@@ -126,8 +127,10 @@ pub struct App {
     pub workspace: String,
     /// Chat messages
     pub messages: Vec<Message>,
-    /// Current input text
+    /// Current input text (kept for backward compatibility)
     pub input: String,
+    /// TextArea widget for input handling
+    textarea: TextArea<'static>,
     /// Scroll offset for chat area
     pub scroll: u16,
     /// List state for chat scrolling
@@ -247,11 +250,19 @@ impl App {
         let mut chat_state = ListState::default();
         chat_state.select(Some(0));
 
+        // Initialize TextArea widget with optimized configuration
+        let mut textarea = TextArea::default();
+        // Config will be applied after Self is created; set inline for now
+        textarea.set_placeholder_text("Type a message... (Enter to send, Shift+Enter for new line)");
+        textarea.set_placeholder_style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray));
+        textarea.set_cursor_line_style(ratatui::style::Style::default());
+
         Ok(Self {
             quit: false,
             workspace: config.workspace,
             messages: Vec::new(),
             input: String::new(),
+            textarea,
             scroll: 0,
             chat_state,
             cursor_position: 0,
@@ -535,6 +546,28 @@ impl App {
         }
     }
 
+    /// Sync input field from textarea (for backward compatibility)
+    fn sync_input_from_textarea(&mut self) {
+        self.input = self.textarea.lines().join("\n");
+        self.cursor_position = self.textarea.cursor().1;
+    }
+
+    /// Set textarea content and sync input field
+    fn set_textarea_content(&mut self, content: &str) {
+        let lines: Vec<String> = content.lines().map(String::from).collect();
+        let lines = if lines.is_empty() { vec![String::new()] } else { lines };
+        self.textarea = TextArea::from(lines);
+        self.apply_textarea_config();
+        self.sync_input_from_textarea();
+    }
+
+    /// Apply standard configuration to textarea
+    fn apply_textarea_config(&mut self) {
+        self.textarea.set_placeholder_text("Type a message... (Enter to send, Shift+Enter for new line)");
+        self.textarea.set_placeholder_style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray));
+        self.textarea.set_cursor_line_style(ratatui::style::Style::default());
+    }
+
     /// Build tree structure from messages for threaded display
     fn build_message_tree(&mut self) {
         self.message_tree = Tree::new();
@@ -592,101 +625,6 @@ impl App {
     /// Handle action from keymap
     fn handle_action(&mut self, action: &Action) {
         match action {
-            Action::CursorLeft => {
-                if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
-                }
-            }
-            Action::CursorRight => {
-                let char_count = self.input.chars().count();
-                if self.cursor_position < char_count {
-                    self.cursor_position += 1;
-                }
-            }
-            Action::CursorWordLeft => {
-                // Move cursor to start of previous word
-                let words: Vec<&str> = self.input.split_whitespace().collect();
-                if words.is_empty() {
-                    self.cursor_position = 0;
-                    return;
-                }
-                let mut pos = 0;
-                for word in words.iter() {
-                    let word_start = self.input[pos..].find(word).map(|p| pos + p).unwrap_or(pos);
-                    if word_start > self.cursor_position {
-                        break;
-                    }
-                    pos = word_start;
-                }
-                self.cursor_position = pos;
-            }
-            Action::CursorWordRight => {
-                // Move cursor to start of next word
-                if let Some(next_word_pos) = self.input[self.cursor_position..].find(|c: char| c.is_whitespace()) {
-                    let ws_start = self.cursor_position + next_word_pos;
-                    if let Some(next_non_ws) = self.input[ws_start..].find(|c: char| !c.is_whitespace()) {
-                        self.cursor_position = ws_start + next_non_ws;
-                    }
-                } else {
-                    self.cursor_position = self.input.len();
-                }
-            }
-            Action::CursorHome => {
-                self.cursor_position = 0;
-            }
-            Action::CursorEnd => {
-                self.cursor_position = self.input.chars().count();
-            }
-            Action::InsertChar(c) => {
-                let char_idx = self.cursor_position.min(self.input.chars().count());
-                let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                self.input.insert(byte_idx, *c);
-                self.cursor_position += 1;
-            }
-            Action::Delete => {
-                if self.cursor_position < self.input.chars().count() {
-                    let char_idx = self.cursor_position;
-                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                    self.input.remove(byte_idx);
-                }
-            }
-            Action::DeleteWord => {
-                // Delete from cursor to end of current word
-                if let Some(word_end) = self.input[self.cursor_position..].find(|c: char| c.is_whitespace()) {
-                    let end_pos = self.cursor_position + word_end;
-                    self.input.drain(self.cursor_position..end_pos);
-                } else {
-                    self.input.drain(self.cursor_position..);
-                }
-            }
-            Action::Backspace => {
-                if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
-                    let char_idx = self.cursor_position;
-                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(0);
-                    self.input.remove(byte_idx);
-                }
-            }
-            Action::Clear => {
-                self.input.clear();
-                self.cursor_position = 0;
-            }
-            Action::Submit => {
-                if !self.input.is_empty() {
-                    let msg_content = std::mem::take(&mut self.input);
-                    // Add to history
-                    self.add_to_history(&msg_content);
-                    self.messages.push(Message {
-                        role: MessageRole::User,
-                        content: MessageContent::Text(msg_content),
-                        timestamp: chrono::Local::now().format("%H:%M").to_string(),
-                        parent_id: None,
-                    });
-                    self.cursor_position = 0;
-                    self.input_mode = InputMode::SingleLine;
-                    self.chat_state.select(Some(self.messages.len().saturating_sub(1)));
-                }
-            }
             Action::ScrollUp => {
                 self.scroll_up();
             }
@@ -735,8 +673,8 @@ impl App {
             Action::SearchSelect => {
                 if !self.search_results.is_empty() {
                     let selected = self.search_results[self.search_selected].clone();
-                    self.input = selected;
-                    self.cursor_position = self.input.len();
+                    // Set textarea content to selected history item
+                    self.set_textarea_content(&selected);
                 }
                 self.app_mode = AppMode::Normal;
                 self.search_query.clear();
@@ -752,9 +690,8 @@ impl App {
                     self.search_selected = (self.search_selected + 1).min(self.search_results.len() - 1);
                 }
             }
-            Action::NoOp => {
-                // No operation - do nothing
-            }
+            // Editing actions are handled by tui-textarea, not here
+            _ => {}
         }
     }
 
@@ -1144,102 +1081,19 @@ impl App {
 
     fn draw_input(&self, f: &mut Frame, area: Rect) {
         use ratatui::style::Style;
-        use ratatui::widgets::{Block, Borders, Paragraph};
+        use ratatui::widgets::Borders;
 
-        // Threshold for long input warning
-        const LONG_INPUT_THRESHOLD: usize = 500;
-        const MAX_DISPLAY_CHARS: usize = 300;
-
-        //上下细线
-        let block = Block::new()
+        let block = ratatui::widgets::Block::new()
             .borders(Borders::TOP | Borders::BOTTOM)
             .border_style(Style::default().fg(self.theme.border));
 
-        //添加 ❯ 前缀
-        let prefix = "❯ ";
+        // Clone textarea and set block for rendering
+        let mut textarea = self.textarea.clone();
+        textarea.set_block(block);
+        textarea.set_style(Style::default().fg(self.theme.input));
 
-        // Handle long input: show warning for very long content
-        let (text, _show_warning) = if self.input.len() > LONG_INPUT_THRESHOLD {
-            // Show truncated content + warning
-            let display_content: String = self.input.chars().take(MAX_DISPLAY_CHARS).collect();
-            let warning = format!("\n[... {} characters, showing last {} ...]", self.input.len(), MAX_DISPLAY_CHARS);
-            (format!("{}{}{}", prefix, display_content, warning), true)
-        } else {
-            let content = if self.input.is_empty() {
-                String::new()
-            } else {
-                self.input.clone()
-            };
-            (format!("{}{}", prefix, content), false)
-        };
-
-        let paragraph = Paragraph::new(text)
-            .block(block)
-            .style(Style::default().fg(self.theme.input))
-            .wrap(ratatui::widgets::Wrap { trim: true });
-
-        f.render_widget(paragraph, area);
-
-        // Render cursor at position
-        #[allow(deprecated)]
-        if area.width > 2 {
-            let prefix_width = unicode_width::UnicodeWidthStr::width(prefix) as u16;
-            let available_width = (area.width as usize).saturating_sub(prefix_width as usize);
-
-            if self.input.is_empty() {
-                // Empty input: show cursor at prefix end
-                let x = area.x + prefix_width;
-                let y = area.y + 1;
-                f.set_cursor(x, y);
-            } else {
-                // Calculate cursor row and column based on content
-                // Get characters before cursor position
-                let cursor_pos = self.cursor_position;
-                let chars_before_cursor: String = self.input.chars().take(cursor_pos).collect();
-
-                // Find the content on the current line (after last explicit newline)
-                let last_newline_idx = chars_before_cursor.rfind('\n');
-                let current_line_content = if let Some(idx) = last_newline_idx {
-                    &chars_before_cursor[idx + 1..]
-                } else {
-                    chars_before_cursor.as_str()
-                };
-
-                // Calculate visual width of text on current line
-                let current_line_width = unicode_width::UnicodeWidthStr::width(current_line_content);
-
-                // Calculate wrapped lines and position
-                // When content exactly fills a line (current_line_width == available_width),
-                // the last character wraps to the next line
-                let wrapped_offset = if available_width > 0 && current_line_width >= available_width {
-                    // Same formula as height calculation
-                    (current_line_width.saturating_sub(1)) / available_width
-                } else {
-                    0
-                };
-
-                // Column position within current wrapped line
-                // At boundary (width == available_width), wraps to next line, so col is 0
-                let col_in_line = if available_width > 0 {
-                    if current_line_width > 0 && current_line_width % available_width == 0 {
-                        0 // At exact boundary, wraps to next line
-                    } else {
-                        current_line_width % available_width
-                    }
-                } else {
-                    current_line_width
-                };
-
-                // Count explicit newlines
-                let explicit_newlines = chars_before_cursor.chars().filter(|&c| c == '\n').count() as u16;
-
-                // Final cursor position
-                let cursor_x = (prefix_width as usize + col_in_line).min(area.width as usize - 1) as u16;
-                let cursor_y = (area.y + 1 + explicit_newlines + wrapped_offset as u16).min(area.bottom().saturating_sub(1));
-
-                f.set_cursor(area.x + cursor_x, cursor_y);
-            }
-        }
+        // tui-textarea handles rendering, cursor positioning, and scrolling
+        f.render_widget(&textarea, area);
     }
 
     fn draw_status(&self, f: &mut Frame, area: Rect) {
@@ -1264,7 +1118,7 @@ impl App {
 
         // 第二行: 操作提示
         let line2 = format!(
-            " {} scroll | Tab expand/collapse | Ctrl+R history | Ctrl+C clear/interrupt | 2x Ctrl+C quit ",
+            " {} scroll | Tab expand/collapse | Ctrl+R history | Ctrl+P/N history | Ctrl+A/E line | Ctrl+K/U delete | Ctrl+C clear/interrupt | 2x Ctrl+C quit ",
             icons.arrow,
         );
 
@@ -1441,11 +1295,11 @@ impl App {
                     // Ctrl+C special handling: similar to Claude Code behavior
                     let now = Instant::now();
                     let is_running = self.chunk_receiver.is_some();
+                    let has_input = !self.textarea.lines().iter().all(|s| s.is_empty());
 
-                    if !self.input.is_empty() {
+                    if has_input {
                         // Has input: clear it
-                        self.input.clear();
-                        self.cursor_position = 0;
+                        self.set_textarea_content("");
                     } else if is_running {
                         // Running: interrupt
                         self.chunk_receiver = None;
@@ -1463,17 +1317,9 @@ impl App {
                     }
                 }
                 Action::Submit => {
-                    // Submit needs to handle Shift+Enter for multiline
-                    if key.modifiers.contains(KeyModifiers::SHIFT) {
-                        // Shift+Enter: insert newline
-                        let char_idx = self.cursor_position.min(self.input.chars().count());
-                        let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                        self.input.insert(byte_idx, '\n');
-                        self.cursor_position += 1;
-                        self.input_mode = InputMode::MultiLine;
-                    } else if !self.input.is_empty() {
-                        let msg_content = std::mem::take(&mut self.input);
-                        // Add to history before pushing to messages
+                    // Submit: get content from textarea and send
+                    let msg_content = self.textarea.lines().join("\n");
+                    if !msg_content.is_empty() {
                         self.add_to_history(&msg_content);
                         self.messages.push(Message {
                             role: MessageRole::User,
@@ -1481,16 +1327,12 @@ impl App {
                             timestamp: chrono::Local::now().format("%H:%M").to_string(),
                             parent_id: None,
                         });
-                        self.cursor_position = 0;
+                        // Reset textarea
+                        self.set_textarea_content("");
                         self.input_mode = InputMode::SingleLine;
                         self.chat_state.select(Some(self.messages.len().saturating_sub(1)));
+                        self.history_index = None;
                     }
-                }
-                Action::InsertChar(c) => {
-                    let char_idx = self.cursor_position.min(self.input.chars().count());
-                    let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                    self.input.insert(byte_idx, c);
-                    self.cursor_position += 1;
                 }
                 _ => {
                     self.handle_action(&action);
@@ -1499,73 +1341,59 @@ impl App {
             return;
         }
 
-        // Fallback: Tab for collapse toggle (not in keymap)
+        // Tab: collapse toggle (not in keymap)
         if key.code == KeyCode::Tab {
             if let Some(selected) = self.chat_state.selected() {
                 self.toggle_message_collapse(selected);
             }
+            return;
         }
 
-        // Arrow up/down and Ctrl+P/N for history navigation
-        // Only when not in search mode and input is empty (or at boundaries)
+        // Ctrl+P/Ctrl+N for history navigation
         if self.app_mode != AppMode::Search {
             let history_count = self.history_engine.results().len();
             if history_count > 0 {
-                if key.code == KeyCode::Up || (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('p')) {
-                    // Navigate to previous history
+                if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('p') {
                     let new_index = match self.history_index {
                         None => 0,
                         Some(i) if i < history_count - 1 => i + 1,
                         Some(i) => i,
                     };
-                    if self.history_index != Some(new_index) || self.input.is_empty() {
-                        self.history_index = Some(new_index);
-                        let idx = history_count - 1 - new_index;
-                        if let Some(result) = self.history_engine.results().get(idx) {
-                            self.input = result.content.clone();
-                            self.cursor_position = self.input.len();
-                        }
+                    self.history_index = Some(new_index);
+                    let idx = history_count - 1 - new_index;
+                    if let Some(result) = self.history_engine.results().get(idx) {
+                        self.set_textarea_content(&result.content.clone());
                     }
-                } else if key.code == KeyCode::Down || (key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('n')) {
-                    // Navigate to next history
+                    return;
+                }
+                if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('n') {
                     if let Some(i) = self.history_index {
                         if i > 0 {
                             let new_index = i - 1;
                             self.history_index = Some(new_index);
                             let idx = history_count - 1 - new_index;
                             if let Some(result) = self.history_engine.results().get(idx) {
-                                self.input = result.content.clone();
-                                self.cursor_position = self.input.len();
+                                self.set_textarea_content(&result.content.clone());
                             }
                         } else {
-                            // Go back to empty input
                             self.history_index = None;
-                            self.input.clear();
-                            self.cursor_position = 0;
+                            self.set_textarea_content("");
                         }
                     }
+                    return;
                 }
             }
         }
 
-        // Fallback: Handle regular character input (not handled by keymap)
-        // This is needed because keymap only handles Ctrl+key, not regular keys
-        if let KeyCode::Char(c) = key.code {
-            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                // Insert character at cursor position
-                let char_idx = self.cursor_position.min(self.input.chars().count());
-                let byte_idx = self.input.char_indices().nth(char_idx).map(|(i, _)| i).unwrap_or(self.input.len());
-                // For Shift+Char, convert to uppercase
-                let char_to_insert = if key.modifiers == KeyModifiers::SHIFT {
-                    c.to_ascii_uppercase()
-                } else {
-                    c
-                };
-                self.input.insert(byte_idx, char_to_insert);
-                self.cursor_position += 1;
-                // Reset history navigation when user starts typing
-                self.history_index = None;
-            }
+        // All other keys: delegate to tui-textarea
+        // tui-textarea handles: character input, Ctrl+A/E/B/F/K/D/H/W, arrows,
+        // Home/End, Backspace, Delete, word movement, undo/redo, etc.
+        self.textarea.input(key);
+        self.sync_input_from_textarea();
+
+        // Reset history navigation when user types
+        if matches!(key.code, KeyCode::Char(_)) {
+            self.history_index = None;
         }
     }
 }
