@@ -23,6 +23,8 @@ pub struct WsTransportConfig {
     pub url: String,
     /// Connection timeout in seconds
     pub timeout_secs: u64,
+    /// Maximum connection retries (0 = no retry)
+    pub max_retries: u32,
 }
 
 impl Default for WsTransportConfig {
@@ -30,6 +32,7 @@ impl Default for WsTransportConfig {
         Self {
             url: String::from("ws://localhost:8080/ws"),
             timeout_secs: 10,
+            max_retries: 2,
         }
     }
 }
@@ -79,22 +82,52 @@ impl Transport for WsTransport {
     fn recv_stream(&mut self) -> Pin<Box<dyn Stream<Item = OutputChunk> + Send + '_>> {
         let url = self.config.url.clone();
         let timeout_secs = self.config.timeout_secs;
+        let max_retries = self.config.max_retries;
         let done = self.done.clone();
 
         Box::pin(async_stream::stream! {
-            // Connect to WebSocket server with timeout
-            let ws_stream = match tokio::time::timeout(
-                std::time::Duration::from_secs(timeout_secs),
-                connect_async(&url)
-            ).await {
-                Ok(Ok((stream, _))) => stream,
-                Ok(Err(e)) => {
-                    yield OutputChunk::Error(format!("WebSocket connection failed: {}", e));
-                    yield OutputChunk::Done;
-                    return;
+            // Connect to WebSocket server with timeout and retry
+            let mut ws_stream_opt = None;
+            let mut last_error = String::new();
+
+            for attempt in 0..=max_retries {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_secs),
+                    connect_async(&url)
+                ).await {
+                    Ok(Ok((stream, _))) => {
+                        ws_stream_opt = Some(stream);
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        last_error = format!("WebSocket connection failed: {}", e);
+                        if attempt < max_retries {
+                            let backoff = std::time::Duration::from_millis(500 * 2u64.pow(attempt));
+                            yield OutputChunk::Error(format!(
+                                "{} (retry {}/{} in {}ms)",
+                                last_error, attempt + 1, max_retries, backoff.as_millis()
+                            ));
+                            tokio::time::sleep(backoff).await;
+                        }
+                    }
+                    Err(_) => {
+                        last_error = "WebSocket connection timeout".to_string();
+                        if attempt < max_retries {
+                            let backoff = std::time::Duration::from_millis(500 * 2u64.pow(attempt));
+                            yield OutputChunk::Error(format!(
+                                "{} (retry {}/{} in {}ms)",
+                                last_error, attempt + 1, max_retries, backoff.as_millis()
+                            ));
+                            tokio::time::sleep(backoff).await;
+                        }
+                    }
                 }
-                Err(_) => {
-                    yield OutputChunk::Error("WebSocket connection timeout".to_string());
+            }
+
+            let ws_stream = match ws_stream_opt {
+                Some(s) => s,
+                None => {
+                    yield OutputChunk::Error(last_error);
                     yield OutputChunk::Done;
                     return;
                 }
@@ -173,5 +206,28 @@ impl Transport for WsTransport {
     async fn close(&mut self) -> anyhow::Result<()> {
         self.set_done();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ws_config_default_retries() {
+        let config = WsTransportConfig::default();
+        assert_eq!(config.max_retries, 2);
+        assert_eq!(config.timeout_secs, 10);
+        assert_eq!(config.url, "ws://localhost:8080/ws");
+    }
+
+    #[test]
+    fn test_ws_config_custom_retries() {
+        let config = WsTransportConfig {
+            url: "ws://example.com/ws".to_string(),
+            timeout_secs: 5,
+            max_retries: 5,
+        };
+        assert_eq!(config.max_retries, 5);
     }
 }

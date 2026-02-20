@@ -138,6 +138,22 @@ pub enum AppMode {
     Search,
 }
 
+/// Application runtime state — drives status bar icon and spinner
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum AppState {
+    /// No active processing
+    #[default]
+    Idle,
+    /// Receiving streaming text from agent
+    Streaming,
+    /// Agent is thinking / reasoning
+    Thinking,
+    /// A tool call is in progress
+    ToolRunning,
+    /// Transport is disconnected / failed to connect
+    Offline,
+}
+
 pub struct App {
     /// Whether to quit the application
     #[allow(dead_code)]
@@ -191,6 +207,16 @@ pub struct App {
     message_tree: Tree,
     /// History engine for search
     history_engine: HistoryEngine,
+    /// Runtime state (drives status bar)
+    app_state: AppState,
+    /// Transport kind label for status bar display
+    transport_label: String,
+    /// Frame counter for spinner animation
+    spinner_tick: usize,
+    /// Pending quit confirmation (true = waiting for second press)
+    pending_quit: bool,
+    /// Vim: pending 'g' key for 'gg' command
+    vim_pending_g: bool,
 }
 
 struct ToolCallInfo {
@@ -298,6 +324,11 @@ impl App {
             history_index: None,
             message_tree: Tree::new(),
             history_engine: create_history_engine(),
+            app_state: AppState::default(),
+            transport_label: config.transport_kind.to_string(),
+            spinner_tick: 0,
+            pending_quit: false,
+            vim_pending_g: false,
         })
     }
 
@@ -306,6 +337,8 @@ impl App {
         if config.workspace.is_empty() {
             return Ok(());
         }
+
+        self.transport_label = config.transport_kind.to_string();
 
         // Create transport in async context
         self.transport = match create_transport(
@@ -327,6 +360,16 @@ impl App {
                     error = %e,
                     "Failed to create transport, running in offline mode"
                 );
+                self.app_state = AppState::Offline;
+                self.messages.push(Message {
+                    role: MessageRole::Agent,
+                    content: MessageContent::Error(format!(
+                        "Transport connection failed ({}): {}",
+                        config.transport_kind, e
+                    )),
+                    timestamp: chrono::Local::now().format("%H:%M").to_string(),
+                    parent_id: None,
+                });
                 None
             }
         };
@@ -381,6 +424,7 @@ impl App {
     fn process_chunk(&mut self, chunk: OutputChunk) {
         match chunk {
             OutputChunk::Text(text) => {
+                self.app_state = AppState::Streaming;
                 // Finalize any pending thinking/tool states
                 self.finalize_thinking();
                 self.finalize_tool();
@@ -404,6 +448,7 @@ impl App {
                 });
             }
             OutputChunk::ThinkingStart => {
+                self.app_state = AppState::Thinking;
                 self.thinking_text.clear();
                 self.agent_timestamp = chrono::Local::now().format("%H:%M").to_string();
             }
@@ -415,6 +460,7 @@ impl App {
                 // Keep thinking text for display, user can collapse it
             }
             OutputChunk::ToolStart { name, args: _ } => {
+                self.app_state = AppState::ToolRunning;
                 self.finalize_thinking();
                 // Show running tool immediately so user sees progress
                 self.messages.push(Message {
@@ -473,10 +519,12 @@ impl App {
                 self.current_tool = None;
             }
             OutputChunk::Done => {
+                self.app_state = AppState::Idle;
                 self.finalize_thinking();
                 self.finalize_tool();
             }
             OutputChunk::Error(err) => {
+                self.app_state = AppState::Idle;
                 self.finalize_thinking();
                 self.finalize_tool();
                 self.messages.push(Message {
@@ -576,6 +624,18 @@ impl App {
         self.textarea.set_placeholder_text("Type a message... (Enter to send, Shift+Enter for new line)");
         self.textarea.set_placeholder_style(ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray));
         self.textarea.set_cursor_line_style(ratatui::style::Style::default());
+    }
+
+    /// Get current spinner frame character based on app state
+    fn spinner_frame(&self) -> &str {
+        match self.app_state {
+            AppState::Thinking | AppState::Streaming | AppState::ToolRunning => {
+                let frames = &self.theme.icons.spinner;
+                frames[self.spinner_tick % frames.len()]
+            }
+            AppState::Idle => "✓",
+            AppState::Offline => "⚠",
+        }
     }
 
     /// Build tree structure from messages for threaded display
@@ -728,6 +788,9 @@ impl App {
         terminal: &mut ratatui::Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         loop {
+            // Advance spinner for animated status
+            self.spinner_tick = self.spinner_tick.wrapping_add(1);
+
             terminal.draw(|f| self.draw(f))?;
 
             // Process any available chunks from the transport
@@ -1158,26 +1221,42 @@ impl App {
             KeyMode::Vim => "vim",
         };
         let theme_name = crate::theme::theme_display_name(self.theme.name);
+        let msg_count = self.messages.len();
+        let spinner = self.spinner_frame();
 
-        // 第一行: workspace | mode | theme
+        // 第一行: [spinner] workspace | transport | N msgs | mode | theme
         let line1 = format!(
-            " {} {} | {} mode | {} ",
-            if self.workspace.is_empty() { icons.info } else { icons.agent },
+            " {} {} | {} | {} msgs | {} | {} ",
+            spinner,
             if self.workspace.is_empty() { "no workspace" } else { &self.workspace },
+            self.transport_label,
+            msg_count,
             mode_str,
             theme_name,
         );
 
-        // 第二行: 操作提示
-        let line2 = format!(
-            " {} scroll | Tab expand/collapse | Ctrl+R history | Ctrl+P/N history | Ctrl+A/E line | Ctrl+K/U delete | Ctrl+C clear/interrupt | 2x Ctrl+C quit ",
-            icons.arrow,
-        );
+        // 第二行: 操作提示 or quit confirmation
+        let line2 = if self.pending_quit {
+            format!(
+                " {} Press Ctrl+C or Esc again to quit, any other key to cancel ",
+                icons.warning,
+            )
+        } else {
+            format!(
+                " {} scroll | Tab expand/collapse | Ctrl+R history | Ctrl+P/N history | Ctrl+A/E line | Ctrl+K/U delete | Ctrl+C clear/interrupt | 2x Ctrl+C quit ",
+                icons.arrow,
+            )
+        };
 
         let text = format!("{}\n{}", line1, line2);
 
-        let paragraph = Paragraph::new(text)
-            .style(Style::default().fg(self.theme.status));
+        let status_style = if self.pending_quit {
+            Style::default().fg(self.theme.warning)
+        } else {
+            Style::default().fg(self.theme.status)
+        };
+
+        let paragraph = Paragraph::new(text).style(status_style);
         f.render_widget(paragraph, area);
     }
 
@@ -1312,21 +1391,68 @@ impl App {
         if self.key_mode == KeyMode::Vim && self.app_mode != AppMode::Search {
             match key.code {
                 KeyCode::Char('k') => {
+                    self.pending_quit = false;
+                    self.vim_pending_g = false;
                     self.scroll_up();
                     return;
                 }
                 KeyCode::Char('j') => {
+                    self.pending_quit = false;
+                    self.vim_pending_g = false;
                     self.scroll_down();
                     return;
                 }
+                KeyCode::Char('G') => {
+                    // Jump to bottom
+                    self.pending_quit = false;
+                    self.vim_pending_g = false;
+                    if !self.messages.is_empty() {
+                        let max_offset = self.messages.len().saturating_sub(1);
+                        *self.chat_state.offset_mut() = max_offset;
+                    }
+                    return;
+                }
+                KeyCode::Char('g') => {
+                    self.pending_quit = false;
+                    if self.vim_pending_g {
+                        // gg: jump to top
+                        *self.chat_state.offset_mut() = 0;
+                        self.vim_pending_g = false;
+                    } else {
+                        self.vim_pending_g = true;
+                    }
+                    return;
+                }
+                KeyCode::Char('/') => {
+                    // Open search (same as Ctrl+R)
+                    self.pending_quit = false;
+                    self.vim_pending_g = false;
+                    self.app_mode = AppMode::Search;
+                    self.search_query.clear();
+                    self.search_selected = 0;
+                    self.search_results = self.search_history("");
+                    return;
+                }
                 KeyCode::Char(':') => {
+                    self.pending_quit = false;
+                    self.vim_pending_g = false;
                     return;
                 }
                 KeyCode::Esc => {
-                    self.quit = true;
+                    self.vim_pending_g = false;
+                    let has_input = !self.textarea.lines().iter().all(|s| s.is_empty());
+                    let is_busy = self.app_state != AppState::Idle && self.app_state != AppState::Offline;
+                    if (has_input || is_busy) && !self.pending_quit {
+                        self.pending_quit = true;
+                    } else {
+                        self.quit = true;
+                    }
                     return;
                 }
-                _ => {}
+                _ => {
+                    // Any other key resets vim_pending_g
+                    self.vim_pending_g = false;
+                }
             }
         }
 
@@ -1351,15 +1477,24 @@ impl App {
                     let now = Instant::now();
                     let is_running = self.chunk_receiver.is_some();
                     let has_input = !self.textarea.lines().iter().all(|s| s.is_empty());
+                    let is_busy = self.app_state != AppState::Idle && self.app_state != AppState::Offline;
 
                     if has_input {
                         // Has input: clear it
                         self.set_textarea_content("");
+                        self.pending_quit = false;
                     } else if is_running {
                         // Running: interrupt
                         self.chunk_receiver = None;
+                        self.pending_quit = false;
+                    } else if is_busy && !self.pending_quit {
+                        // Busy but no pending quit yet: set pending
+                        self.pending_quit = true;
+                    } else if self.pending_quit {
+                        // Already pending: quit immediately
+                        self.quit = true;
                     } else {
-                        // Not running: check for double-Ctrl+C
+                        // Not running, not busy: check for double-Ctrl+C
                         if let Some(last_time) = self.last_ctrl_c_time {
                             if now.duration_since(last_time) < Duration::from_secs(2) {
                                 self.quit = true;
@@ -1445,6 +1580,9 @@ impl App {
         // Home/End, Backspace, Delete, word movement, undo/redo, etc.
         self.textarea.input(key);
 
+        // Any non-quit key cancels pending quit confirmation
+        self.pending_quit = false;
+
         // Reset history navigation when user types
         if matches!(key.code, KeyCode::Char(_)) {
             self.history_index = None;
@@ -1486,6 +1624,21 @@ impl App {
     /// Get quit flag
     pub(crate) fn test_quit(&self) -> bool {
         self.quit
+    }
+
+    /// Get current app state
+    pub(crate) fn test_app_state(&self) -> AppState {
+        self.app_state
+    }
+
+    /// Get pending quit flag
+    pub(crate) fn test_pending_quit(&self) -> bool {
+        self.pending_quit
+    }
+
+    /// Get vim pending g flag
+    pub(crate) fn test_vim_pending_g(&self) -> bool {
+        self.vim_pending_g
     }
 
 }
@@ -1898,5 +2051,207 @@ mod tests_theme {
             let config = AppConfig::default().with_theme(name);
             let _app = App::with_config(config).unwrap();
         }
+    }
+}
+
+// ── AppState tests ──────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests_app_state {
+    use super::*;
+
+    fn app() -> App {
+        App::with_config(AppConfig::default()).unwrap()
+    }
+
+    #[test]
+    fn test_app_state_default_idle() {
+        let app = app();
+        assert_eq!(app.test_app_state(), AppState::Idle);
+    }
+
+    #[test]
+    fn test_app_state_thinking() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::ThinkingStart);
+        assert_eq!(app.test_app_state(), AppState::Thinking);
+    }
+
+    #[test]
+    fn test_app_state_streaming() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::Text("hello".into()));
+        assert_eq!(app.test_app_state(), AppState::Streaming);
+    }
+
+    #[test]
+    fn test_app_state_tool() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::ToolStart {
+            name: "Read".into(),
+            args: "{}".into(),
+        });
+        assert_eq!(app.test_app_state(), AppState::ToolRunning);
+    }
+
+    #[test]
+    fn test_app_state_done_resets() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::ThinkingStart);
+        assert_eq!(app.test_app_state(), AppState::Thinking);
+        app.test_process_chunk(OutputChunk::Done);
+        assert_eq!(app.test_app_state(), AppState::Idle);
+    }
+
+    #[test]
+    fn test_app_state_error_resets() {
+        let mut app = app();
+        app.test_process_chunk(OutputChunk::Text("streaming".into()));
+        assert_eq!(app.test_app_state(), AppState::Streaming);
+        app.test_process_chunk(OutputChunk::Error("fail".into()));
+        assert_eq!(app.test_app_state(), AppState::Idle);
+    }
+}
+
+// ── Quit confirmation tests ─────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests_quit_confirm {
+    use super::*;
+
+    fn app() -> App {
+        App::with_config(AppConfig::default()).unwrap()
+    }
+
+    #[test]
+    fn test_quit_confirm_with_input() {
+        let mut app = app();
+        // Type something to have non-empty input
+        app.test_handle_key(key_event(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert!(!app.test_textarea_content().is_empty());
+
+        // Ctrl+C should clear input, not set pending_quit
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.test_textarea_content().is_empty());
+        assert!(!app.test_pending_quit());
+        assert!(!app.test_quit());
+    }
+
+    #[test]
+    fn test_quit_confirm_cancel() {
+        let mut app = app();
+        // Put app in busy state
+        app.test_process_chunk(OutputChunk::ThinkingStart);
+        assert_eq!(app.test_app_state(), AppState::Thinking);
+
+        // First Ctrl+C sets pending
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.test_pending_quit());
+        assert!(!app.test_quit());
+
+        // Any other key cancels pending
+        app.test_handle_key(key_event(KeyCode::Char('a'), KeyModifiers::NONE));
+        assert!(!app.test_pending_quit());
+        assert!(!app.test_quit());
+    }
+
+    #[test]
+    fn test_quit_direct_when_idle() {
+        let mut app = app();
+        // Idle, no input: double Ctrl+C quits directly
+        assert_eq!(app.test_app_state(), AppState::Idle);
+        assert!(app.test_textarea_content().is_empty());
+
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(!app.test_quit());
+
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.test_quit());
+    }
+
+    #[test]
+    fn test_quit_confirm_busy_double_ctrl_c() {
+        let mut app = app();
+        // Put app in busy state
+        app.test_process_chunk(OutputChunk::ThinkingStart);
+
+        // First Ctrl+C sets pending
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.test_pending_quit());
+
+        // Second Ctrl+C while pending → quit
+        app.test_handle_key(key_event(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert!(app.test_quit());
+    }
+}
+
+// ── Vim mode enhancement tests ──────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests_vim_enhanced {
+    use super::*;
+
+    fn vim_app() -> App {
+        let mut app = App::with_config(AppConfig::default()).unwrap();
+        app.set_key_mode(KeyMode::Vim);
+        // Add messages for scrolling tests
+        for i in 0..10 {
+            app.messages.push(Message {
+                role: MessageRole::Agent,
+                content: MessageContent::Text(format!("msg {}", i)),
+                timestamp: "00:00".into(),
+                parent_id: None,
+            });
+        }
+        app
+    }
+
+    #[test]
+    fn test_vim_g_bottom() {
+        let mut app = vim_app();
+        // Start at top
+        *app.chat_state.offset_mut() = 0;
+
+        // G should jump to bottom
+        app.test_handle_key(key_event(KeyCode::Char('G'), KeyModifiers::SHIFT));
+        assert_eq!(app.chat_state.offset(), 9); // 10 messages, max offset = 9
+    }
+
+    #[test]
+    fn test_vim_gg_top() {
+        let mut app = vim_app();
+        // Start at bottom
+        *app.chat_state.offset_mut() = 9;
+
+        // gg should jump to top
+        app.test_handle_key(key_event(KeyCode::Char('g'), KeyModifiers::NONE));
+        assert!(app.test_vim_pending_g());
+
+        app.test_handle_key(key_event(KeyCode::Char('g'), KeyModifiers::NONE));
+        assert!(!app.test_vim_pending_g());
+        assert_eq!(app.chat_state.offset(), 0);
+    }
+
+    #[test]
+    fn test_vim_slash_search() {
+        let mut app = vim_app();
+        assert_eq!(app.test_app_mode(), AppMode::Normal);
+
+        // / should open search
+        app.test_handle_key(key_event(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert_eq!(app.test_app_mode(), AppMode::Search);
+    }
+
+    #[test]
+    fn test_vim_g_reset() {
+        let mut app = vim_app();
+
+        // Press g once
+        app.test_handle_key(key_event(KeyCode::Char('g'), KeyModifiers::NONE));
+        assert!(app.test_vim_pending_g());
+
+        // Press a different key - should reset
+        app.test_handle_key(key_event(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert!(!app.test_vim_pending_g());
     }
 }

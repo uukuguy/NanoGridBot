@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase**: Phase 25 Task 1 端到端集成测试 ✅ 完成
+**Phase**: Phase 26 TUI 打磨 ✅ 完成
 **Date**: 2026-02-21
 **Branch**: build-by-rust
-**Tests**: 175 passing (130 existing + 45 ngb-tui: 39 unit + 6 integration), zero clippy warnings
+**Tests**: 259 passing (workspace), 63 ngb-tui (55 unit + 8 integration), zero clippy warnings
 
 ---
 
@@ -560,8 +560,80 @@ ngb shell test
 
 ### 可能的后续 Tasks
 
-- Task 2: 状态栏完善（运行状态 idle/streaming/thinking、消息计数、transport 类型）
-- Task 3: 退出确认对话框（自行实现，tui-confirm-dialog crate 不存在）
-- Task 4: 错误处理增强（transport 连接失败重试、超时处理）
-- Task 5: Vim 模式键绑定增强
+- ~~Task 2: 状态栏完善~~ → Phase 26 Task 1 ✅
+- ~~Task 3: 退出确认对话框~~ → Phase 26 Task 2 ✅
+- ~~Task 4: 错误处理增强~~ → Phase 26 Task 3 ✅
+- ~~Task 5: Vim 模式键绑定增强~~ → Phase 26 Task 4 ✅
 - Task 6: 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
+
+---
+
+## Phase 26: TUI 打磨 (Polish)
+
+**状态**: ✅ 完成
+**日期**: 2026-02-21
+**测试**: 259 passing (workspace), 63 ngb-tui (55 unit + 8 integration), zero clippy warnings
+
+### 完成工作
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| 1 | AppState 枚举 + 状态栏增强 | ✅ |
+| 2 | 退出确认 | ✅ |
+| 3 | Transport 错误可见化 + WS 重试 | ✅ |
+| 4 | Vim 模式增强 (G/gg//) | ✅ |
+| 5 | 集成测试更新 + 最终验证 | ✅ |
+
+### Task 1: AppState 枚举 + 状态栏增强
+
+- **AppState 枚举**: `Idle / Streaming / Thinking / ToolRunning / Offline`
+- **状态转换**: ThinkingStart→Thinking, Text→Streaming, ToolStart→ToolRunning, Done/Error→Idle
+- **transport_label**: 状态栏显示传输类型名称
+- **spinner_frame()**: 根据 app_state 返回动画帧或静态图标 (✓/⚠)
+- **draw_status 重写**: `[spinner] workspace | transport | N msgs | mode | theme`
+- **setup_transport 增强**: 失败时设 `app_state = Offline` 并添加可见错误消息
+- **测试**: 6 个 (default_idle, thinking, streaming, tool, done_resets, error_resets)
+
+### Task 2: 退出确认
+
+- **pending_quit 标志**: 有输入或 app_state 非 Idle 时，第一次 Ctrl+C/Esc 设置 pending
+- **第二次按键退出**: pending 状态下再按 Ctrl+C/Esc 才真正退出
+- **取消**: 任何非退出键重置 pending_quit
+- **状态栏提示**: pending 时第二行显示确认提示（warning 颜色）
+- **测试**: 4 个 (with_input, cancel, direct_idle, busy_double_ctrl_c)
+
+### Task 3: Transport 错误可见化 + WS 重试
+
+- **WsTransportConfig.max_retries**: 默认 2 次重试
+- **重试循环**: 指数退避 (500ms, 1000ms)，每次重试 yield Error chunk
+- **测试**: 2 个 (default_retries, custom_retries)
+
+### Task 4: Vim 模式增强
+
+- **G**: 跳转到消息列表底部
+- **gg**: 双键跳转到顶部 (vim_pending_g 标志)
+- **/**: 打开历史搜索 (等同 Ctrl+R)
+- **g 重置**: 非 g 键时自动重置 pending 标志
+- **测试**: 4 个 (G_bottom, gg_top, slash_search, g_reset)
+
+### Task 5: 集成测试更新
+
+- `test_app_state_exported`: 验证 AppState 枚举公开可用
+- `test_app_default_state`: 验证初始状态
+
+### 修改文件
+
+- `crates/ngb-tui/src/app.rs` — AppState 枚举, pending_quit, vim_pending_g, spinner, 状态栏重写, 16 个新测试
+- `crates/ngb-tui/src/lib.rs` — 导出 AppState
+- `crates/ngb-tui/src/transport/ws.rs` — max_retries + 重试循环 + 2 个测试
+- `crates/ngb-tui/src/transport/mod.rs` — create_transport 传递 max_retries
+- `crates/ngb-tui/tests/integration_tests.rs` — 2 个新集成测试
+
+### 下一步
+
+**TUI 打磨完成**，NGB Shell TUI 已达到生产可用状态。
+
+**可选后续任务**:
+- 版本兼容性升级追踪（等 tui-textarea 适配 ratatui 0.30）
+- 与真实容器集成测试
+- 性能优化（大量消息时的渲染性能）

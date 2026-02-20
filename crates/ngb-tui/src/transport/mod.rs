@@ -91,6 +91,7 @@ pub async fn create_transport(
             let ws_config = WsTransportConfig {
                 url,
                 timeout_secs: 10,
+                max_retries: 2,
             };
             Ok(Box::new(WsTransport::new(ws_config)))
         }

@@ -1,7 +1,7 @@
 //! Integration tests for ngb-tui — uses only public API + MockTransport.
 
 use ngb_tui::{
-    App, AppConfig, MockTransport, OutputChunk, ThemeName, Transport,
+    App, AppConfig, AppState, MockTransport, OutputChunk, ThemeName, Transport,
     MOCK_TRANSPORT,
 };
 use futures::StreamExt;
@@ -102,4 +102,28 @@ fn test_app_all_themes_constructable() {
         let config = AppConfig::default().with_theme(name);
         let _app = App::with_config(config).unwrap();
     }
+}
+
+// ── Phase 26 integration tests ──────────────────────────────────────────────
+
+#[test]
+fn test_app_state_exported() {
+    // Verify AppState enum is publicly accessible with all variants
+    let _idle = AppState::Idle;
+    let _streaming = AppState::Streaming;
+    let _thinking = AppState::Thinking;
+    let _tool = AppState::ToolRunning;
+    let _offline = AppState::Offline;
+
+    // Default should be Idle
+    assert_eq!(AppState::default(), AppState::Idle);
+}
+
+#[test]
+fn test_app_default_state() {
+    let app = App::new().unwrap();
+    // New app should be empty, not quit, workspace empty
+    assert!(app.messages.is_empty());
+    assert!(!app.quit);
+    assert!(app.workspace.is_empty());
 }
