@@ -3,8 +3,8 @@
 ## Current Status
 
 **Branch**: dev
-**Date**: 2026-02-21
-**Last Commit**: 733fedf
+**Date**: 2026-02-22
+**Last Commit**: 733fedf (未提交)
 
 ### 项目现状
 
@@ -36,12 +36,13 @@ ChatPage 改造为 IDE 风格四面板布局。**设计文档已完成**。
 - 6 个任务，25 个子任务
 - 里程碑：M1 布局骨架 → M2 对话流增强 → M3 Inspector → M4 响应式 → M5 测试
 
-**本会话已完成 (Task 1 + Task 2 + Task 3)**:
+**本会话已完成 (Task 1-6 全部完成)**:
 - Task 1: 新建 `WorkspaceList.tsx`、`InspectorPanel.tsx`、`BottomPanel.tsx`，修改 `ChatPage.tsx` 四面板布局
 - Task 2: 新建 `DiffViewer.tsx`、`ToolCallCard.tsx`，MessageList 添加点击事件
 - Task 3: Inspector 面板增强 - 多 tool calls 支持、Session 元数据展示
 - Task 4: 底部面板（已实现 Terminal/IPC/Metrics 三个 Tab）
 - Task 5: 状态管理（selectedMessage、bottomPanelTab、inspectorOpen）
+- Task 6: 响应式适配 - 桌面/平板/移动端三档适配
 
 **新增文件**:
 - `frontend/src/components/chat/DiffViewer.tsx` - 代码 diff 渲染
@@ -57,8 +58,22 @@ ChatPage 改造为 IDE 风格四面板布局。**设计文档已完成**。
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| P1 | Phase B Task 6 | 响应式适配（桌面/平板/移动端） |
 | P2 | TUI ↔ Python 后端集成 | 通信桥接、API 对接、启动流程统一 |
+
+### Phase B Task 6 实现细节（响应式适配）
+
+**修改文件**: `frontend/src/pages/ChatPage.tsx`
+
+**响应式断点**:
+- 桌面端 (≥1024px): 四面板完整展示，左侧/右侧面板内联显示
+- 平板端 (768px-1023px): Inspector 面板抽屉化 (Sheet)，左侧面板内联
+- 移动端 (<768px): 左侧面板抽屉化 (Sheet)，Inspector 通过浮动按钮触发
+
+**技术实现**:
+- 使用 `window.innerWidth` + `useEffect` 监听屏幕尺寸变化
+- 使用 Radix UI `Sheet` 组件实现抽屉效果
+- 条件渲染：isDesktop / isTablet 状态变量控制布局
+- 抽屉关闭时自动同步内部状态
 
 ### 启动命令
 
