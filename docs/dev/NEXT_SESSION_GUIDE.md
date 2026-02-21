@@ -36,9 +36,11 @@ ChatPage 改造为 IDE 风格四面板布局。**设计文档已完成**。
 - 6 个任务，25 个子任务
 - 里程碑：M1 布局骨架 → M2 对话流增强 → M3 Inspector → M4 响应式 → M5 测试
 
-**本会话已完成 (Task 1 + Task 2)**:
+**本会话已完成 (Task 1 + Task 2 + Task 3)**:
 - Task 1: 新建 `WorkspaceList.tsx`、`InspectorPanel.tsx`、`BottomPanel.tsx`，修改 `ChatPage.tsx` 四面板布局
 - Task 2: 新建 `DiffViewer.tsx`、`ToolCallCard.tsx`，MessageList 添加点击事件
+- Task 3: Inspector 面板增强 - 多 tool calls 支持、Session 元数据展示
+- Task 4: 底部面板（已实现 Terminal/IPC/Metrics 三个 Tab）
 - Task 5: 状态管理（selectedMessage、bottomPanelTab、inspectorOpen）
 
 **新增文件**:
@@ -46,6 +48,7 @@ ChatPage 改造为 IDE 风格四面板布局。**设计文档已完成**。
 - `frontend/src/components/chat/ToolCallCard.tsx` - 工具调用卡片
 
 **修改文件**:
+- `frontend/src/components/console/InspectorPanel.tsx` - 多 tool calls 支持、Session 元数据
 - `frontend/src/components/chat/MessageBubble.tsx` - 添加 tool_calls 渲染
 - `frontend/src/components/chat/MessageList.tsx` - 添加消息点击事件
 - `frontend/package.json` - 添加 diff 依赖
@@ -54,9 +57,7 @@ ChatPage 改造为 IDE 风格四面板布局。**设计文档已完成**。
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| P1 | Phase B Task 3 | Inspector 面板细节（多 tool calls 支持） |
-| P1 | Phase B Task 4 | 底部面板细节（IPC 面板实现） |
-| P1 | Phase B Task 6 | 响应式适配 |
+| P1 | Phase B Task 6 | 响应式适配（桌面/平板/移动端） |
 | P2 | TUI ↔ Python 后端集成 | 通信桥接、API 对接、启动流程统一 |
 
 ### 启动命令

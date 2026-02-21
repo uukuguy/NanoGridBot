@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Copy, Check, FileText, Cpu, Hash } from 'lucide-react';
 import { useChatStore, type GroupInfo } from '../../stores/chat';
 import { Button } from '@/components/ui/button';
@@ -14,12 +14,17 @@ interface InspectorPanelProps {
 // Types for selected message
 type MessageType = 'user' | 'assistant' | 'tool' | 'thinking' | 'error' | 'system';
 
+interface ToolCallDetail {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  output?: unknown;
+}
+
 interface MessageDetail {
   type: MessageType;
   content?: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  toolOutput?: unknown;
+  toolCalls?: ToolCallDetail[];
   thinking?: string;
   sessionId?: string;
   tokens?: number;
@@ -39,32 +44,49 @@ export function InspectorPanel({ className, groupJid }: InspectorPanelProps) {
 
     const msg = selectedMessage;
 
+    // Extract session metadata (available in any message)
+    const sessionMeta = {
+      sessionId: msg.session_id,
+      tokens: msg.tokens,
+      duration: msg.duration,
+      containerId: msg.container_id,
+    };
+
     // Determine message type
     if (msg.role === 'user') {
-      return { type: 'user', content: msg.content };
+      return { type: 'user', content: msg.content, ...sessionMeta };
     }
 
     if (msg.role === 'assistant') {
-      // Check for tool calls
+      // Check for tool calls (multiple supported)
       if (msg.tool_calls && msg.tool_calls.length > 0) {
+        const toolCalls: ToolCallDetail[] = msg.tool_calls.map((tc) => ({
+          id: tc.id,
+          name: tc.function?.name || 'unknown',
+          input:
+            typeof tc.function?.arguments === 'string'
+              ? JSON.parse(tc.function.arguments)
+              : (tc.function?.arguments as Record<string, unknown>),
+          output: msg.tool_output,
+        }));
+
         return {
           type: 'tool',
-          toolName: msg.tool_calls[0].function?.name,
-          toolInput: msg.tool_calls[0].function?.arguments as Record<string, unknown> | undefined,
-          toolOutput: msg.tool_output,
+          toolCalls,
+          ...sessionMeta,
         };
       }
 
       // Check for thinking/thought
       if (msg.thinking) {
-        return { type: 'thinking', thinking: msg.thinking };
+        return { type: 'thinking', thinking: msg.thinking, ...sessionMeta };
       }
 
-      return { type: 'assistant', content: msg.content };
+      return { type: 'assistant', content: msg.content, ...sessionMeta };
     }
 
     if (msg.role === 'system') {
-      return { type: 'system', content: msg.content };
+      return { type: 'system', content: msg.content, ...sessionMeta };
     }
 
     return null;
@@ -114,48 +136,57 @@ export function InspectorPanel({ className, groupJid }: InspectorPanelProps) {
             </DetailSection>
           )}
 
-          {/* Tool Call */}
-          {messageDetail.type === 'tool' && (
-            <>
-              <DetailSection
-                title={`工具调用: ${messageDetail.toolName}`}
-                icon={<Cpu className="w-4 h-4" />}
-              >
-                <div className="space-y-2">
-                  {messageDetail.toolInput && (
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">输入参数:</div>
-                      <CodeBlock data={messageDetail.toolInput} />
+          {/* Tool Calls - Multiple supported */}
+          {messageDetail.type === 'tool' && messageDetail.toolCalls && (
+            <DetailSection
+              title={`工具调用 (${messageDetail.toolCalls.length})`}
+              icon={<Cpu className="w-4 h-4" />}
+            >
+              <div className="space-y-3">
+                {messageDetail.toolCalls.map((toolCall, index) => (
+                  <div key={toolCall.id} className="border rounded-lg p-3 bg-muted/30">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-mono text-xs font-medium text-blue-600 dark:text-blue-400">
+                        {index + 1}. {toolCall.name}
+                      </span>
                     </div>
-                  )}
-                  {messageDetail.toolOutput !== undefined && (
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">输出结果:</div>
-                      <CodeBlock data={messageDetail.toolOutput} />
+                    <div className="space-y-2">
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">输入参数:</div>
+                        <CodeBlock data={toolCall.input} />
+                      </div>
+                      {toolCall.output !== undefined && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">输出结果:</div>
+                          <CodeBlock data={toolCall.output} />
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </DetailSection>
-            </>
+                  </div>
+                ))}
+              </div>
+            </DetailSection>
           )}
 
-          {/* Session Metadata */}
-          <DetailSection title="会话信息" icon={<Hash className="w-4 h-4" />}>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {messageDetail.sessionId && (
-                <MetadataItem label="Session ID" value={messageDetail.sessionId} />
-              )}
-              {messageDetail.tokens && (
-                <MetadataItem label="Tokens" value={formatTokens(messageDetail.tokens)} />
-              )}
-              {messageDetail.duration && (
-                <MetadataItem label="耗时" value={formatDuration(messageDetail.duration)} />
-              )}
-              {messageDetail.containerId && (
-                <MetadataItem label="容器" value={messageDetail.containerId} />
-              )}
-            </div>
-          </DetailSection>
+          {/* Session Metadata - Show only if data exists */}
+          {(messageDetail.sessionId || messageDetail.tokens || messageDetail.duration || messageDetail.containerId) && (
+            <DetailSection title="会话信息" icon={<Hash className="w-4 h-4" />}>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {messageDetail.sessionId && (
+                  <MetadataItem label="Session ID" value={messageDetail.sessionId} />
+                )}
+                {messageDetail.tokens && (
+                  <MetadataItem label="Tokens" value={formatTokens(messageDetail.tokens)} />
+                )}
+                {messageDetail.duration && (
+                  <MetadataItem label="耗时" value={formatDuration(messageDetail.duration)} />
+                )}
+                {messageDetail.containerId && (
+                  <MetadataItem label="容器" value={messageDetail.containerId} />
+                )}
+              </div>
+            </DetailSection>
+          )}
 
           {/* Files Changed */}
           {messageDetail.filesChanged && messageDetail.filesChanged.length > 0 && (
@@ -284,9 +315,6 @@ function MetadataItem({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
-// Import useState for CodeBlock
-import { useState } from 'react';
 
 // Format helpers
 function formatTokens(tokens: number): string {
