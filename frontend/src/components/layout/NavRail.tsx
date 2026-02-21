@@ -1,13 +1,11 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { MessageSquare, Clock, Activity, Settings, LogOut } from 'lucide-react';
+import { Terminal, Settings, Users, LogOut } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth';
 import { EmojiAvatar } from '../common/EmojiAvatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const navItems = [
-  { path: '/chat', icon: MessageSquare, label: '工作台' },
-  { path: '/tasks', icon: Clock, label: '任务' },
-  { path: '/monitor', icon: Activity, label: '监控' },
+  { path: '/chat', icon: Terminal, label: 'Console' },
   { path: '/settings', icon: Settings, label: '设置' },
 ];
 
@@ -28,7 +26,7 @@ export function NavRail() {
       <nav className="w-16 h-full bg-white border-r border-border flex flex-col items-center py-4 gap-2">
         {/* Logo */}
         <div className="w-10 h-10 rounded-xl overflow-hidden mb-2 flex-shrink-0">
-          <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="HappyClaw" className="w-full h-full object-cover" />
+          <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="NanoGridBot" className="w-full h-full object-cover" />
         </div>
 
         {navItems.map(({ path, icon: Icon, label }) => (
@@ -53,6 +51,30 @@ export function NavRail() {
             </TooltipContent>
           </Tooltip>
         ))}
+
+        {/* Admin nav item — only visible to admin users */}
+        {user?.role === 'admin' && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <NavLink
+                to="/users"
+                className={({ isActive }) =>
+                  `w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                    isActive
+                      ? 'bg-brand-50 text-primary'
+                      : 'text-muted-foreground hover:bg-accent'
+                  }`
+                }
+              >
+                <Users className="w-5 h-5" />
+                <span className="text-xs">Admin</span>
+              </NavLink>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              Admin
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Spacer */}
         <div className="flex-1" />

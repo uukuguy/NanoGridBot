@@ -1,14 +1,14 @@
 /**
  * NanoGridBot API Adapter
  *
- * This adapter maps HappyClaw frontend API calls to NanoGridBot backend responses.
+ * This adapter maps frontend API calls to NanoGridBot backend responses.
  * It handles endpoint mapping and response transformation.
  */
 
 import { api as originalApi, apiFetch } from './client';
 
 // ============================================================================
-// Type Definitions (matching HappyClaw frontend expectations)
+// Type Definitions
 // ============================================================================
 
 export interface UserPublic {

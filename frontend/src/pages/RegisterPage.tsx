@@ -115,7 +115,7 @@ export function RegisterPage() {
           <div className="bg-white rounded-lg border border-slate-200 p-8">
             <div className="flex justify-center mb-6">
               <div className="w-16 h-16 rounded-2xl overflow-hidden mx-auto">
-                <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="HappyClaw" className="w-full h-full object-cover" />
+                <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="NanoGridBot" className="w-full h-full object-cover" />
               </div>
             </div>
             <h1 className="text-2xl font-bold text-slate-900 text-center mb-2">
@@ -143,7 +143,7 @@ export function RegisterPage() {
           {/* Logo */}
           <div className="flex justify-center mb-6">
             <div className="w-16 h-16 rounded-2xl overflow-hidden mx-auto">
-              <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="HappyClaw" className="w-full h-full object-cover" />
+              <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="NanoGridBot" className="w-full h-full object-cover" />
             </div>
           </div>
 
@@ -235,10 +235,7 @@ export function RegisterPage() {
           </p>
 
           <p className="text-center text-sm text-slate-500 mt-2">
-            HappyClaw - Powered by{' '}
-            <a href="https://github.com/riba2534" target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-              riba2534
-            </a>
+            NanoGridBot — Agent Dev Console
           </p>
         </div>
       </div>

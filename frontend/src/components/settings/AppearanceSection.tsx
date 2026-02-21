@@ -92,7 +92,7 @@ export function AppearanceSection({ setNotice, setError }: AppearanceSectionProp
             size="lg"
           />
           <div>
-            <div className="text-sm font-medium text-slate-900">{aiName || 'HappyClaw'}</div>
+            <div className="text-sm font-medium text-slate-900">{aiName || 'NanoGridBot'}</div>
             <div className="text-xs text-slate-500">AI 助手</div>
           </div>
         </div>
@@ -106,7 +106,7 @@ export function AppearanceSection({ setNotice, setError }: AppearanceSectionProp
           value={appName}
           onChange={(e) => setAppName(e.target.value)}
           maxLength={32}
-          placeholder="HappyClaw"
+          placeholder="NanoGridBot"
           className="max-w-xs"
         />
         <p className="text-xs text-slate-500 mt-1">显示在 Logo 旁边和欢迎页的项目名称</p>
@@ -120,7 +120,7 @@ export function AppearanceSection({ setNotice, setError }: AppearanceSectionProp
           value={aiName}
           onChange={(e) => setAiName(e.target.value)}
           maxLength={32}
-          placeholder="HappyClaw"
+          placeholder="NanoGridBot"
           className="max-w-xs"
         />
         <p className="text-xs text-slate-500 mt-1">显示在聊天消息中的 AI 助手名称</p>

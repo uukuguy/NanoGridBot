@@ -5,7 +5,7 @@ import './styles/globals.css';
 import { shouldUseHashRouter } from './utils/url';
 
 if (typeof window !== 'undefined') {
-  window.__HAPPYCLAW_HASH_ROUTER__ = shouldUseHashRouter();
+  window.__NGB_HASH_ROUTER__ = shouldUseHashRouter();
 }
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {

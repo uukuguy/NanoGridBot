@@ -101,7 +101,7 @@ export function ChatSidebar({ className }: ChatSidebarProps) {
   };
 
   const appearance = useAuthStore((s) => s.appearance);
-  const appName = appearance?.appName || 'HappyClaw';
+  const appName = appearance?.appName || 'NanoGridBot';
 
   const handleCreated = (jid: string, folder: string) => {
     selectGroup(jid);

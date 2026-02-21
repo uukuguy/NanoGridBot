@@ -57,11 +57,11 @@ export function SetupPage() {
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <div className="w-16 h-16 rounded-2xl overflow-hidden">
-              <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="HappyClaw" className="w-full h-full object-cover" />
+              <img src={`${import.meta.env.BASE_URL}icons/icon-192.png`} alt="NanoGridBot" className="w-full h-full object-cover" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-1">HappyClaw 初始设置</h1>
-          <p className="text-sm text-slate-500">先创建管理员账号，完成后进入后台继续配置飞书 Token 与 Claude Key</p>
+          <h1 className="text-2xl font-bold text-slate-900 mb-1">NanoGridBot 初始设置</h1>
+          <p className="text-sm text-slate-500">配置 Claude API Key 和系统参数</p>
         </div>
 
         {/* Step card */}

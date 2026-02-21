@@ -45,8 +45,8 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/riba2534/happyclaw.git",
-    "directory": "web"
+    "url": "git+https://github.com/nickerso/NanoGridBot.git",
+    "directory": "frontend"
   },
-  "author": "riba2534"
+  "author": "NanoGridBot Team"
 }
