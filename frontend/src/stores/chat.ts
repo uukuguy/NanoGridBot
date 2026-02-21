@@ -15,6 +15,21 @@ export interface Message {
   timestamp: string;
   is_from_me: boolean;
   attachments?: string;
+  // Extended fields for Inspector
+  role?: 'user' | 'assistant' | 'system';
+  tool_calls?: Array<{
+    id: string;
+    function: {
+      name: string;
+      arguments: string | Record<string, unknown>;
+    };
+  }>;
+  tool_output?: unknown;
+  thinking?: string;
+  session_id?: string;
+  tokens?: number;
+  duration?: number;
+  container_id?: string;
 }
 
 // 流式事件类型定义
@@ -127,6 +142,12 @@ interface ChatState {
   pendingThinking: Record<string, string>;
   /** Per-group lock: true while clearHistory is in-flight, prevents race re-injection */
   clearing: Record<string, boolean>;
+  /** Selected message for Inspector panel */
+  selectedMessage: Message | null;
+  /** Bottom panel tab */
+  bottomPanelTab: 'terminal' | 'ipc' | 'metrics';
+  /** Inspector panel visibility */
+  inspectorOpen: boolean;
   loadGroups: () => Promise<void>;
   selectGroup: (jid: string) => void;
   loadMessages: (jid: string, loadMore?: boolean) => Promise<void>;
@@ -146,6 +167,9 @@ interface ChatState {
     options?: { preserveThinking?: boolean },
   ) => void;
   restoreActiveState: () => Promise<void>;
+  selectMessage: (message: Message | null) => void;
+  setBottomPanelTab: (tab: 'terminal' | 'ipc' | 'metrics') => void;
+  toggleInspector: () => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -160,6 +184,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   thinkingCache: {},
   pendingThinking: {},
   clearing: {},
+  selectedMessage: null,
+  bottomPanelTab: 'terminal',
+  inspectorOpen: false,
 
   loadGroups: async () => {
     set({ loading: true });
@@ -835,6 +862,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch {
       // 静默失败
     }
+  },
+
+  // 选择消息用于 Inspector 面板
+  selectMessage: (message) => {
+    set({ selectedMessage: message });
+  },
+
+  // 设置底部面板 Tab
+  setBottomPanelTab: (tab) => {
+    set({ bottomPanelTab: tab });
+  },
+
+  // 切换 Inspector 面板
+  toggleInspector: () => {
+    set((s) => ({ inspectorOpen: !s.inspectorOpen }));
   },
 
   // 清除流式状态
