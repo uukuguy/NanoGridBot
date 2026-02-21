@@ -49,13 +49,15 @@ export async function apiFetch<T>(path: string, options?: RequestInit & { timeou
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    // FastAPI returns error in 'detail' field, also try 'error' for compatibility
+    const errorMessage = body.detail || body.error || res.statusText;
     if (res.status === 403 && body.code === 'PASSWORD_CHANGE_REQUIRED') {
       const currentPath = stripBasePath(window.location.pathname);
       if (!currentPath.startsWith('/settings')) {
         replaceInApp('/settings');
       }
     }
-    throw { status: res.status, message: body.error || res.statusText } as ApiError;
+    throw { status: res.status, message: errorMessage } as ApiError;
   }
   if (res.status === 204) return undefined as T;
   return res.json();

@@ -2,6 +2,7 @@
 
 import asyncio
 import signal
+from datetime import datetime
 from typing import Any
 
 from loguru import logger
@@ -244,7 +245,11 @@ class Orchestrator:
                     break
 
                 # Get new messages from all channels
-                messages = await self.db.get_new_messages(self.last_timestamp)
+                # Convert string timestamp to datetime if needed
+                since_dt = None
+                if self.last_timestamp:
+                    since_dt = datetime.fromisoformat(self.last_timestamp)
+                messages = await self.db.get_new_messages(since_dt)
 
                 if messages:
                     # Group messages by chat

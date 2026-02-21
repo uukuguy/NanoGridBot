@@ -350,3 +350,55 @@ class GroupQueue:
             # TODO: Send via router
         else:
             logger.error(f"Container failed for {jid}: {result.error}")
+
+    async def interrupt(self, jid: str) -> bool:
+        """Interrupt a running container for the given group.
+
+        Args:
+            jid: Group JID to interrupt
+
+        Returns:
+            True if interrupt was successful, False otherwise
+        """
+        from loguru import logger
+
+        async with self._lock:
+            state = self.states.get(jid)
+            if not state or not state.active or not state.container_name:
+                logger.info(f"No active container found for {jid}")
+                return False
+
+            container_name = state.container_name
+
+            try:
+                # Import and use docker to stop the container
+                import aiodocker
+
+                docker = aiodocker.Docker()
+                try:
+                    container = docker.containers.get(container_name)
+                    await container.stop(timeout=5)
+                    logger.info(f"Container {container_name} stopped successfully")
+                    state.active = False
+                    state.container_name = None
+                    self.active_count = max(0, self.active_count - 1)
+                    return True
+                finally:
+                    await docker.close()
+            except Exception as e:
+                logger.error(f"Failed to stop container {container_name}: {e}")
+                return False
+
+    async def enqueue(self, jid: str, message: Any) -> None:
+        """Enqueue a message for processing.
+
+        Note: Messages sent via API are already stored in the database.
+        This method is a no-op as the orchestrator's message loop
+        will pick up new messages from the database.
+
+        Args:
+            jid: Group JID
+            message: Message to enqueue (ignored)
+        """
+        # No-op: message is already in database, orchestrator picks it up
+        pass

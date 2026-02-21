@@ -75,6 +75,18 @@ ChatPage 改造为 IDE 风格四面板布局。**设计文档已完成**。
 - 条件渲染：isDesktop / isTablet 状态变量控制布局
 - 抽屉关闭时自动同步内部状态
 
+### 本会话修复 (2026-02-22)
+
+**前端调试修复**:
+1. 工作区列表加载 - 后端返回数组转字典格式
+2. 错误信息显示 - body.detail 字段读取
+3. 创建工作区错误提示 - 返回具体错误信息
+
+**后端 Bug 修复**:
+1. orchestrator timestamp 错误 - 字符串转 datetime
+2. GroupQueue.interrupt() - 停止容器方法
+3. GroupQueue.enqueue() - 消息入队方法（no-op）
+
 ### 启动命令
 
 ```bash

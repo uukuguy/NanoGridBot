@@ -157,7 +157,7 @@ interface ChatState {
   interruptQuery: (jid: string) => Promise<boolean>;
   resetSession: (jid: string) => Promise<boolean>;
   clearHistory: (jid: string) => Promise<boolean>;
-  createFlow: (name: string, options?: { execution_mode?: 'container' | 'host'; custom_cwd?: string; init_source_path?: string; init_git_url?: string }) => Promise<{ jid: string; folder: string } | null>;
+  createFlow: (name: string, options?: { execution_mode?: 'container' | 'host'; custom_cwd?: string; init_source_path?: string; init_git_url?: string }) => Promise<{ jid: string; folder: string } | { error: string } | null>;
   renameFlow: (jid: string, name: string) => Promise<void>;
   deleteFlow: (jid: string) => Promise<void>;
   handleStreamEvent: (chatJid: string, event: StreamEvent) => void;
@@ -191,25 +191,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadGroups: async () => {
     set({ loading: true });
     try {
-      const data = await api.get<{ groups: Record<string, GroupInfo> }>('/api/groups');
+      // Backend returns an array, convert to Record<string, GroupInfo>
+      const data = await api.get<GroupInfo[]>('/api/groups');
+      const groupsMap: Record<string, GroupInfo> = {};
+      for (const group of data) {
+        groupsMap[group.jid] = group;
+      }
       set((state) => {
         const currentStillExists =
-          state.currentGroup && !!data.groups[state.currentGroup];
+          state.currentGroup && !!groupsMap[state.currentGroup];
 
         let nextCurrent = currentStillExists ? state.currentGroup : null;
         if (!nextCurrent) {
-          const homeEntry = Object.entries(data.groups).find(
+          const homeEntry = Object.entries(groupsMap).find(
             ([_, group]) => group.is_my_home,
           );
           if (homeEntry) {
             nextCurrent = homeEntry[0];
           } else {
-            nextCurrent = Object.keys(data.groups)[0] || null;
+            nextCurrent = Object.keys(groupsMap)[0] || null;
           }
         }
 
         return {
-          groups: data.groups,
+          groups: groupsMap,
           currentGroup: nextCurrent,
           loading: false,
           error: null,
@@ -495,7 +500,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  createFlow: async (name: string, options?: { execution_mode?: 'container' | 'host'; custom_cwd?: string; init_source_path?: string; init_git_url?: string }) => {
+  createFlow: async (name: string, options?: { execution_mode?: 'container' | 'host'; custom_cwd?: string; init_source_path?: string; init_git_url?: string }): Promise<{ jid: string; folder: string } | { error: string } | null> => {
     try {
       const body: Record<string, string> = { name };
       if (options?.execution_mode) body.execution_mode = options.execution_mode;
@@ -509,7 +514,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         jid: string;
         group: GroupInfo;
       }>('/api/groups', body, needsLongTimeout ? 120_000 : undefined);
-      if (!data.success) return null;
+      if (!data.success) {
+        return { error: '创建失败，请重试' };
+      }
 
       set((s) => ({
         groups: { ...s.groups, [data.jid]: data.group },
@@ -518,8 +525,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       return { jid: data.jid, folder: data.group.folder };
     } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      return null;
+      // Handle both Error objects and { status, message } objects
+      const error = err as { message?: string } | Error;
+      const errorMessage = 'message' in error ? error.message : (error.message || String(err));
+      set({ error: errorMessage });
+      return { error: errorMessage };
     }
   },
 

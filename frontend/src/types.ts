@@ -1,7 +1,9 @@
 export interface GroupInfo {
+  jid?: string;
   name: string;
   folder: string;
-  added_at: string;
+  added_at?: string;
+  active?: boolean;
   kind?: 'home' | 'main' | 'feishu' | 'web';
   is_home?: boolean;
   is_my_home?: boolean;

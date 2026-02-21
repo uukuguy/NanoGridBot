@@ -80,15 +80,21 @@ export function CreateContainerDialog({
           options.init_git_url = initGitUrl.trim();
         }
       }
-      const created = await createFlow(trimmed, Object.keys(options).length ? options : undefined);
-      if (created) {
-        onCreated(created.jid, created.folder);
+      const result = await createFlow(trimmed, Object.keys(options).length ? options : undefined);
+      if (result && 'jid' in result) {
+        onCreated(result.jid, result.folder);
         handleClose();
+      } else if (result && 'error' in result) {
+        // Show the specific error message from backend
+        setError(result.error);
       } else {
         setError('创建失败，请重试');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '创建失败');
+      // Handle both Error objects and { status, message } objects
+      const error = err as { message?: string } | Error;
+      const errorMsg = 'message' in error ? error.message : (error.message || '创建失败');
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
