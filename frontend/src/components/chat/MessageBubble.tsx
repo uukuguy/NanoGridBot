@@ -1,9 +1,20 @@
 import { useState, memo } from 'react';
 import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
-import { Message } from '../../stores/chat';
+import { Message, useChatStore } from '../../stores/chat';
 import { useAuthStore } from '../../stores/auth';
 import { EmojiAvatar } from '../common/EmojiAvatar';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { ToolCallCard } from './ToolCallCard';
+
+interface MessageBubbleProps {
+  message: Message;
+  showTime: boolean;
+  thinkingContent?: string;
+  /** Tool calls for this message */
+  toolCalls?: Message['tool_calls'];
+  /** Tool outputs for this message */
+  toolOutputs?: Record<string, unknown>;
+}
 
 interface MessageBubbleProps {
   message: Message;
@@ -65,8 +76,15 @@ function ReasoningBlock({ content }: { content: string }) {
   );
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, showTime, thinkingContent }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({
+  message,
+  showTime,
+  thinkingContent,
+  toolCalls,
+  toolOutputs,
+}: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
+  const selectMessage = useChatStore((s) => s.selectMessage);
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
   const currentUser = useAuthStore((s) => s.user);
   const appearance = useAuthStore((s) => s.appearance);
@@ -223,6 +241,20 @@ export const MessageBubble = memo(function MessageBubble({ message, showTime, th
             {/* Reasoning block */}
             {thinkingContent && <ReasoningBlock content={thinkingContent} />}
 
+            {/* Tool calls */}
+            {toolCalls && toolCalls.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {toolCalls.map((toolCall) => (
+                  <ToolCallCard
+                    key={toolCall.id}
+                    toolCall={toolCall}
+                    output={toolOutputs?.[toolCall.id]}
+                    onClick={() => selectMessage(message)}
+                  />
+                ))}
+              </div>
+            )}
+
             {/* Image attachments */}
             {images.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
@@ -253,5 +285,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showTime, th
   prev.message.id === next.message.id &&
   prev.message.content === next.message.content &&
   prev.showTime === next.showTime &&
-  prev.thinkingContent === next.thinkingContent
+  prev.thinkingContent === next.thinkingContent &&
+  prev.toolCalls === next.toolCalls &&
+  prev.toolOutputs === next.toolOutputs
 );

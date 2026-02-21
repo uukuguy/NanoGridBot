@@ -21,6 +21,7 @@ type FlatItem =
 
 export function MessageList({ messages, loading, hasMore, onLoadMore, scrollTrigger }: MessageListProps) {
   const thinkingCache = useChatStore(s => s.thinkingCache ?? {});
+  const selectMessage = useChatStore(s => s.selectMessage);
   const parentRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [atTop, setAtTop] = useState(false);
@@ -267,8 +268,16 @@ export function MessageList({ messages, loading, hasMore, onLoadMore, scrollTrig
                 }}
                 ref={virtualizer.measureElement}
                 data-index={virtualItem.index}
+                className="cursor-pointer"
+                onClick={() => selectMessage(message)}
               >
-                <MessageBubble message={message} showTime={showTime} thinkingContent={thinkingCache[message.id]} />
+                <MessageBubble
+                  message={message}
+                  showTime={showTime}
+                  thinkingContent={thinkingCache[message.id]}
+                  toolCalls={message.tool_calls}
+                  toolOutputs={message.tool_output as Record<string, unknown> | undefined}
+                />
               </div>
             );
           })}
