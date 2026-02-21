@@ -4,7 +4,7 @@
 
 **Branch**: dev
 **Date**: 2026-02-21
-**Last Commit**: 7c8830e
+**Last Commit**: 733fedf
 
 ### 项目现状
 
@@ -14,36 +14,26 @@ dev 分支包含三个技术栈的完整实现：
 |--------|------|------|
 | Rust TUI (crates/) | Phase 27 ✅ | 259 workspace + 63 TUI tests |
 | Python Backend (src/) | Phase 10 ✅ | 640+ tests |
-| React Frontend (frontend/) | HappyClaw 整合完成 | 待改造 |
+| React Frontend (frontend/) | Phase A+C ✅ | TypeScript 编译通过 |
 
-### 下一阶段重点：前端改造实施（Phase A + Phase C）
+### 已完成：Phase A + Phase C (733fedf)
+
+**Phase A (品牌清理)**: 16 个文件中所有 HappyClaw 引用替换为 NanoGridBot。全局变量 `__HAPPYCLAW_HASH_ROUTER__` → `__NGB_HASH_ROUTER__`。AboutSection 全文重写。
+
+**Phase C (导航精简)**: NavRail 简化为 Console/设置/Admin(条件)。AppLayout 重写为纯桌面布局。删除 BottomTabBar, SwipeablePages, useScrollDirection。移除 /monitor 和 /groups 路由。净删除 406 行。
 
 **设计文档**: `docs/plans/2026-02-21-frontend-redesign.md`
 **实施计划**: `docs/plans/2026-02-21-frontend-phase-ac-impl.md`
 
-#### 立即可执行：Phase A — 品牌清理（13 Tasks）
+### 下一阶段重点：Phase B — Debug Console 核心改造
 
-将所有 HappyClaw 引用替换为 NanoGridBot，不改功能和布局。涉及 12+ 文件：
+ChatPage 改造为 IDE 风格四面板布局。需要单独设计和规划。
 
-- `index.html` — title, apple-mobile-web-app-title
-- `main.tsx` / `vite-env.d.ts` / `url.ts` — `__HAPPYCLAW_HASH_ROUTER__` → `__NGB_HASH_ROUTER__`
-- `LoginPage.tsx` / `RegisterPage.tsx` / `SetupPage.tsx` — 标题、footer、logo alt
-- `ChatPage.tsx` — 欢迎语 fallback
-- `NavRail.tsx` / `ChatSidebar.tsx` — logo alt、fallback name
-- `AppearanceSection.tsx` / `AboutSection.tsx` — placeholder、项目信息
-- `adapter.ts` / `package.json` — 注释、repository、author
-
-#### 紧接执行：Phase C — 页面整合 + 导航精简（8 Tasks）
-
-- NavRail 简化为 Console / Settings / Admin（移除任务、监控 Tab）
-- 移除 BottomTabBar + SwipeablePages（桌面优先）
-- 移除 MonitorPage 和 GroupsPage 路由
-- 清理未使用 hooks
-- 简化 AppLayout
-
-#### 后续规划：Phase B — Debug Console 核心改造
-
-ChatPage 改造为 IDE 风格四面板布局。需要单独设计和规划，不在 Phase A+C 范围内。
+**核心内容**:
+- ChatPage 改造为四面板 IDE 布局（文件树 / 对话 / 终端 / 属性面板）
+- 集成 xterm.js 终端
+- 实时 WebSocket 状态流
+- 需要先完成详细的 Phase B 设计文档
 
 ### 其他待办
 
